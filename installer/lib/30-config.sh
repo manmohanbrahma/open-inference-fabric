@@ -31,10 +31,11 @@ for n, line in enumerate(open(path, encoding="utf-8"), 1):
 PY
 }
 
-env_load() {   # file: set the known keys from a .env file
+env_load() {   # file: set the known keys from a .env file; empty values there do not override saved ones
   local k v out; [ -f "$1" ] || return 0
   out=$(env_parse "$1") || die "cannot read $1"
-  while IFS=$'\t' read -r k v; do [ -n "$k" ] && printf -v "$k" '%s' "$v"; done <<< "$out"
+  while IFS=$'\t' read -r k v; do [ -n "$k" ] && [ -n "$v" ] && printf -v "$k" '%s' "$v"; done <<< "$out"
+  return 0
 }
 
 config_load_saved() { if [ -f "$CONF" ]; then
@@ -60,7 +61,19 @@ PY
 check_bdfs() {   # comma-separated PCI addresses that exist on this host
   local b; [ -z "$1" ] || [ "$1" = none ] && return 0
   for b in ${1//,/ }; do [[ $b =~ ^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$ ]] || { echo "bad PCI address '$b' (form 0000:c8:00.0)"; return 1; }
-    [ -e "/sys/bus/pci/devices/$b" ] || { echo "no PCI device $b on this host"; return 1; }; done; }
+    [ -e "$PCI_ROOT/$b" ] || { echo "no PCI device $b on this host"; return 1; }; done; }
+gpu_vendor_check() {   # list vendor-id label: every address exists and belongs to that vendor
+  local b; [ -z "$1" ] || [ "$1" = none ] && return 0
+  check_bdfs "$1" || return 1
+  for b in ${1//,/ }; do [ "$(pci_ids "$b" | cut -d: -f1)" = "$2" ] || { echo "$b is not an $3 GPU ($(pci_name "$b"))"; return 1; }; done; }
+v_nv() { gpu_vendor_check "$1" 10de NVIDIA; }
+v_amd() { local b; gpu_vendor_check "$1" 1002 AMD || return 1; [ "$1" = none ] && return 0
+  for b in ${1//,/ }; do amd_compute "$b" || { echo "$b is not a supported AMD compute GPU"; return 1; }; done; }
+v_iso() { local b; gpu_vendor_check "$1" 1002 AMD || return 1; [ "$1" = none ] && return 0
+  for b in ${1//,/ }; do
+    [[ ",${AMD_GPUS:-}," == *",$b,"* ]] && { echo "$b is also in AMD_GPUS: a GPU is either used or isolated"; return 1; }
+    [ -z "${AMD_GPUS:-}" ] && amd_compute "$b" && { echo "$b is a compute GPU and AMD_GPUS (empty) means all of them: list AMD_GPUS explicitly"; return 1; }
+  done; return 0; }
 check_email() { [[ $1 =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || { echo "not an e-mail address"; return 1; }; }
 check_password() { [ ${#1} -ge 12 ] || { echo "use at least 12 characters"; return 1; }; }
 
@@ -71,11 +84,11 @@ ask_valid() { local var=$1 q=$2 def=$3 fn=$4 secret=${5:-} v why n=0
     if why=$($fn "$v" 2>&1); then printf -v "$var" '%s' "$v"; return 0; fi
     echo "   $why" >/dev/tty; n=$((n + 1)); [ $n -ge 3 ] && die "$var: $why"
   done; }
-valid_or_ask() {   # VAR question default validator [secret]: keep a valid .env value, else ask
+valid_or_ask() {   # VAR question default validator [secret]: keep a valid value (.env or saved), else ask
   local var=$1 why
   if [ -n "${!var:-}" ]; then
     if why=$($4 "${!var}" 2>&1); then return 0; fi
-    warn "$var in $ENV_FILE: $why"; [ "$INTERACTIVE" = 1 ] || die "$var: $why"
+    warn "$var: $why"; [ "$INTERACTIVE" = 1 ] || die "$var: $why"
   fi
   [ "$INTERACTIVE" = 1 ] || die "$var is not set in $ENV_FILE and oif is not interactive"
   ask_valid "$@"
@@ -85,6 +98,17 @@ v_ip_here() { valid_ip "$1" || { echo "not an IPv4 address"; return 1; }; [ -n "
 v_range() { check_range "$1" "$(host_prefix "$HOST_IP")"; }
 v_dir() { [[ $1 == /* && $1 != / ]] || { echo "give an absolute path (not /)"; return 1; }; }
 v_any() { return 0; }
+
+CONFIG_CHECKS=(HOST_IP:v_ip_here METALLB_RANGE:v_range INSTALL_DIR:v_dir NVIDIA_GPUS:v_nv AMD_GPUS:v_amd ISOLATE_GPUS:v_iso
+               RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_password GRAFANA_ADMIN_PASSWORD:check_password)
+config_validate() {   # saved settings still valid on this host (secret values are never printed)
+  local kv k f why bad=0
+  for kv in "${CONFIG_CHECKS[@]}"; do k=${kv%%:*}; f=${kv#*:}
+    [ -n "${!k:-}" ] || continue
+    why=$($f "${!k}" 2>&1) || { warn "setting $k: $why"; bad=1; }
+  done
+  [ $bad = 0 ] || die "the saved settings are not valid on this host: correct them with 'sudo $SELF install --reconfigure'"
+}
 
 config_collect() {   # all questions first; nothing on the host changes here
   [ "$INTERACTIVE" = 1 ] || die "settings are missing: run 'sudo oif install' in a terminal"
@@ -96,10 +120,10 @@ config_collect() {   # all questions first; nothing on the host changes here
   id "$INSTALL_USER" >/dev/null 2>&1 || die "no user $INSTALL_USER"
 
   echo; echo "${c_b}GPUs on this host${c_0}"; gpu_table
-  valid_or_ask NVIDIA_GPUS "   NVIDIA GPUs for Kubernetes (PCI addresses, comma-separated; empty = all)" "" check_bdfs
-  valid_or_ask AMD_GPUS "   AMD GPUs for Kubernetes from Project 1.2 (empty = all supported)" "" check_bdfs
+  valid_or_ask NVIDIA_GPUS "   NVIDIA GPUs for Kubernetes (addresses from the NVIDIA lines, comma-separated; empty = all)" "" v_nv
+  valid_or_ask AMD_GPUS "   AMD GPUs for Kubernetes from Project 1.2 (addresses from the AMD compute lines; empty = all)" "" v_amd
   local def_iso; def_iso=$(IFS=,; echo "${OTHER_BDFS[*]}")
-  valid_or_ask ISOLATE_GPUS "   GPUs to keep away from Kubernetes with vfio (display cards; 'none' for none)" "${def_iso:-none}" check_bdfs
+  valid_or_ask ISOLATE_GPUS "   AMD display cards to keep away from Kubernetes with vfio ('none' for none)" "${def_iso:-none}" v_iso
   [ "$ISOLATE_GPUS" = none ] && ISOLATE_GPUS=""
 
   echo; echo "${c_b}Network${c_0}"

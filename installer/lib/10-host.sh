@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Host facts and GPU discovery (read-only). Sourced by oif.
 
+PCI_ROOT=${PCI_ROOT:-/sys/bus/pci/devices}             # tests point this at a fake device tree
 AMD_COMPUTE_IDS=${AMD_COMPUTE_IDS:-"7448 744a 7449 745e 744c 7551 74a1 74a5 75a3"}   # W7900/W7800/RX 7900/R9700/MI300-355
 
 valid_ip() { python3 -c "import ipaddress,sys;ipaddress.IPv4Address(sys.argv[1])" "$1" 2>/dev/null; }
@@ -12,16 +13,16 @@ largest_fs() { df -BG --output=avail,target -x tmpfs -x devtmpfs -x overlay -x s
   | tail -n +2 | sort -n | tail -1 | awk '{print $2}'; }
 
 # ---------------------------------------------------------------- GPUs
-pci_ids() { local v d; v=$(<"/sys/bus/pci/devices/$1/vendor"); d=$(<"/sys/bus/pci/devices/$1/device"); echo "${v#0x}:${d#0x}"; }
+pci_ids() { local v d; v=$(<"$PCI_ROOT/$1/vendor"); d=$(<"$PCI_ROOT/$1/device"); echo "${v#0x}:${d#0x}"; }
 pci_name() { lspci -vmm -s "$1" 2>/dev/null | awk -F'\t' '/^Device:/{print $2; exit}'; }
-drv() { local l; l=$(readlink "/sys/bus/pci/devices/$1/driver" 2>/dev/null) || true; echo "${l##*/}"; }
-slot_functions() { local f; for f in "/sys/bus/pci/devices/${1%.*}".*; do echo "${f##*/}"; done; }
+drv() { local l; l=$(readlink "$PCI_ROOT/$1/driver" 2>/dev/null) || true; echo "${l##*/}"; }
+slot_functions() { local f; for f in "$PCI_ROOT/${1%.*}".*; do echo "${f##*/}"; done; }
 amd_compute() { [[ " $AMD_COMPUTE_IDS " == *" $(pci_ids "$1" | cut -d: -f2) "* ]]; }
 
 discover_gpus() {   # NV_BDFS, AMD_BDFS (compute targets), OTHER_BDFS (other AMD GPUs: AMD's device plugin would claim
   # them, so they are isolated), IGNORED_BDFS (other vendors, e.g. the BMC's display chip: never touched)
   NV_BDFS=(); AMD_BDFS=(); OTHER_BDFS=(); IGNORED_BDFS=(); local p b cls
-  for p in /sys/bus/pci/devices/*; do
+  for p in "$PCI_ROOT"/*; do
     b=${p##*/}; cls=$(<"$p/class")
     [[ $cls == 0x0300* || $cls == 0x0302* || $cls == 0x0380* || $cls == 0x1200* ]] || continue
     case $(pci_ids "$b") in

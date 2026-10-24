@@ -4,6 +4,7 @@
 #
 #   ./oif check                   read-only host and GPU report (no sudo needed)
 #   sudo ./oif install            asks its questions first, then runs unattended as a background job
+#        install --reconfigure    asks again for settings that are invalid or changed in .env, then continues
 #   sudo ./oif status             progress and recorded host changes
 #   sudo ./oif plan               read-only preview of what uninstall would remove and keep
 #   sudo ./oif uninstall [--yes]  reverse every host change oif made, back to the OS default
@@ -51,18 +52,21 @@ main() {
     status)    status ;;
     plan)      plan ;;
     uninstall) uninstall "${args[@]+"${args[@]}"}" ;;
-    install)   install_interactive ;;
+    install)   install_interactive "${args[@]+"${args[@]}"}" ;;
     _worker|_resume) INTERACTIVE=0; exec >>"$LOG" 2>&1; TLOG=/dev/null; install_run ;;
     _uninstall-worker) INTERACTIVE=0; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
   esac
 }
 
-usage() { sed -n '3,13p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,14p' "$SELF" | sed 's/^# \{0,1\}//'; }
 usage_error() { echo "oif: $*" >&2; echo "run '$0 help' for usage" >&2; exit 2; }
 
 install_interactive() {
   exec 9>"$STATE/lock"; flock -n 9 || die "another oif run is active (follow it: sudo tail -f $LOG)"
-  if [ -f "$CONF" ]; then echo "Using the settings saved by the first run ($CONF); finished stages are skipped."
+  if [ -f "$CONF" ] && [ "${1:-}" != --reconfigure ]; then
+    echo "Using the settings saved by the first run ($CONF); finished stages are skipped."
+    echo "(To change them: edit .env and run 'sudo $SELF install --reconfigure'.)"
+    config_validate
   else config_collect; fi
   exec 9>&-
   systemctl reset-failed oif-install >/dev/null 2>&1 || true
@@ -78,6 +82,7 @@ install_run() {
   log "oif $OIF_VERSION install (state in $STATE)"
   [ -f "$CONF" ] || die "no saved settings: run 'sudo $SELF install' interactively first"
   config_load_saved
+  config_validate
   run_stages
   if [ -f "$RESUME_UNIT" ]; then systemctl disable oif-resume >/dev/null 2>&1 || true; rm -f "$RESUME_UNIT"; systemctl daemon-reload; fi
   log "install finished"

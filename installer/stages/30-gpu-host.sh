@@ -30,7 +30,7 @@ stage_gpu_isolation() {
   ids=$(echo "$ids" | tr ',' '\n' | awk '!s[$0]++' | paste -sd,)
   local p mine   # vfio-pci binds by device id: no other device may share one
   mine=" $(for b in $(iso_list); do slot_functions "$b"; done | paste -sd' ') "
-  for p in /sys/bus/pci/devices/*; do
+  for p in "$PCI_ROOT"/*; do
     [[ $mine == *" ${p##*/} "* ]] && continue
     [[ ",$ids," == *",$(pci_ids "${p##*/}"),"* ]] && die "${p##*/} has the same device id as a GPU to isolate; vfio-pci would take it too"
   done
