@@ -1,16 +1,24 @@
 diff --git a/runai-cluster/cluster/cluster-sync/pkg/handlers/parsers/node_parser.go b/runai-cluster/cluster/cluster-sync/pkg/handlers/parsers/node_parser.go
-index dd4d3141..7da3a769 100644
+index dd4d3141..e0f011bb 100644
 --- a/runai-cluster/cluster/cluster-sync/pkg/handlers/parsers/node_parser.go
 +++ b/runai-cluster/cluster/cluster-sync/pkg/handlers/parsers/node_parser.go
-@@ -58,6 +58,11 @@ const (
- 	NvidiaGpuTypeLabelKey          = "nvidia.com/gpu.product"
- 	NvidiaGpuMemoryLabelKey        = "nvidia.com/gpu.memory"
- 	AmdGpuTypeLabelPrefix          = "beta.amd.com/gpu.family."
+@@ -54,10 +54,15 @@ const (
+ 	NotReadyPhase             = "NotReady"
+ 	MissingPrerequisitesPhase = "MissingPrerequisites"
+ 
+-	NvidiaGpuCountLabelKey         = "nvidia.com/gpu.count"
+-	NvidiaGpuTypeLabelKey          = "nvidia.com/gpu.product"
+-	NvidiaGpuMemoryLabelKey        = "nvidia.com/gpu.memory"
+-	AmdGpuTypeLabelPrefix          = "beta.amd.com/gpu.family."
++	NvidiaGpuCountLabelKey  = "nvidia.com/gpu.count"
++	NvidiaGpuTypeLabelKey   = "nvidia.com/gpu.product"
++	NvidiaGpuMemoryLabelKey = "nvidia.com/gpu.memory"
++	AmdGpuTypeLabelPrefix   = "beta.amd.com/gpu.family."
 +	// The AMD GPU Operator's node labeller: amd.com/gpu.product-name=<name>, and the legacy
 +	// beta.amd.com/gpu.product-name.<name>=<count of GPUs with that name on the node>.
-+	AmdGpuProductNameLabelKey    = "amd.com/gpu.product-name"
-+	AmdGpuProductCountLabelPrefix = "beta.amd.com/gpu.product-name."
-+	AmdGpuVramLabelKey           = "amd.com/gpu.vram"
++	AmdGpuProductNameLabelKey      = "amd.com/gpu.product-name"
++	AmdGpuProductCountLabelPrefix  = "beta.amd.com/gpu.product-name."
++	AmdGpuVramLabelKey             = "amd.com/gpu.vram"
  	GPUNetworkAccelerationLabelKey = "gpuNetworkAccelerationLabelKey"
  	NvidiaGpuCliqueLabel           = "nvidia.com/gpu.clique"
  

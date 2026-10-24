@@ -1,0 +1,108 @@
+diff --git a/control-plane/frontend/src/common/icon.util/icon.util.test.ts b/control-plane/frontend/src/common/icon.util/icon.util.test.ts
+index 6815a1dc..aaba1a95 100644
+--- a/control-plane/frontend/src/common/icon.util/icon.util.test.ts
++++ b/control-plane/frontend/src/common/icon.util/icon.util.test.ts
+@@ -4,14 +4,14 @@
+  */
+ 
+ import { describe, it, expect } from "vitest";
+-import { getNimIconIfNimImage, getHuggingFaceIcon } from "./icon.util";
++import { getNimIconIfNimImage, getHuggingFaceIcon, getNvidiaImageBasedIcon, isAmdImage } from "./icon.util";
+ import {
+   NIM_WORKLOAD_LABEL,
+   NIM_IMAGE_PREFIX,
+   LLM_IMAGE_FOR_HUGGING_FACE,
+   LLM_IMAGE_FOR_TGI,
+ } from "@/models/inference.model";
+-import { allWorkloadsIconsMap } from "../icons.constant";
++import { allWorkloadsIconsMap, AMD_WORKLOAD_ICON } from "../icons.constant";
+ import { EWorkloadType } from "@/models/workload.model";
+ import type { Label } from "@/swagger-models/assets-service-client";
+ 
+@@ -378,3 +378,20 @@ describe("getHuggingFaceIcon", () => {
+     });
+   });
+ });
++
++describe("getNvidiaImageBasedIcon - AMD ROCm images", () => {
++  it("should return the AMD icon for ROCm images", () => {
++    expect(getNvidiaImageBasedIcon("docker.io/rocm/pytorch:rocm10.1.0_ubuntu24.04_py3.12_pytorch_release_2.14.0")).toBe(
++      AMD_WORKLOAD_ICON,
++    );
++    expect(getNvidiaImageBasedIcon("rocm/vllm:latest")).toBe(AMD_WORKLOAD_ICON);
++    expect(getNvidiaImageBasedIcon("registry.example.com/mirror/rocm/pytorch@sha256:abc")).toBe(AMD_WORKLOAD_ICON);
++  });
++
++  it("should keep the NVIDIA icons and ignore look-alikes", () => {
++    expect(getNvidiaImageBasedIcon("nvcr.io/nvidia/pytorch:25.06-py3")).toBe("pytorch");
++    expect(getNvidiaImageBasedIcon("nvcr.io/nvidia/nemo:25.07")).toBe("nvidia");
++    expect(getNvidiaImageBasedIcon("myrocm/tool:1")).toBeNull();
++    expect(isAmdImage("jupyter/scipy-notebook")).toBe(false);
++  });
++});
+diff --git a/control-plane/frontend/src/common/icon.util/icon.util.ts b/control-plane/frontend/src/common/icon.util/icon.util.ts
+index ea6ae585..1704514d 100644
+--- a/control-plane/frontend/src/common/icon.util/icon.util.ts
++++ b/control-plane/frontend/src/common/icon.util/icon.util.ts
+@@ -9,7 +9,7 @@ import {
+   NIM_IMAGE_PREFIX,
+   NIM_WORKLOAD_LABEL,
+ } from "@/models/inference.model";
+-import { allWorkloadsIconsMap } from "../icons.constant";
++import { allWorkloadsIconsMap, AMD_WORKLOAD_ICON } from "../icons.constant";
+ import { EWorkloadType } from "@/models/workload.model";
+ import type { Label } from "@/swagger-models/assets-service-client";
+ 
+@@ -23,6 +23,12 @@ export function isNvidiaPytorch(image: string | null | undefined): boolean {
+   return image.includes("nvcr.io/nvidia/pytorch");
+ }
+ 
++// AMD's ROCm images live under rocm/ (docker.io/rocm/pytorch, rocm/vllm, a mirror's .../rocm/...).
++export function isAmdImage(image: string | null | undefined): boolean {
++  if (!image) return false;
++  return /(^|\/)rocm\//.test(image);
++}
++
+ export function getNvidiaImageBasedIcon(image: string | null | undefined): string | null {
+   if (!image) return null;
+ 
+@@ -30,6 +36,8 @@ export function getNvidiaImageBasedIcon(image: string | null | undefined): strin
+ 
+   if (isNvidiaImage(image)) return "nvidia";
+ 
++  if (isAmdImage(image)) return AMD_WORKLOAD_ICON;
++
+   return null;
+ }
+ 
+diff --git a/control-plane/frontend/src/common/icons.constant.ts b/control-plane/frontend/src/common/icons.constant.ts
+index bc1e87dd..a9b614b9 100644
+--- a/control-plane/frontend/src/common/icons.constant.ts
++++ b/control-plane/frontend/src/common/icons.constant.ts
+@@ -20,6 +20,7 @@ export const toolTypeIconsMap: Record<string, string> = {
+ };
+ 
+ export const NVIDIA_WORKLOAD_ICON = "nvidia";
++export const AMD_WORKLOAD_ICON = "amd";
+ export const GENERIC_WORKLOAD_ICON = "custom-tool";
+ 
+ export const jobKindIconsMap: Record<string, string> = {
+@@ -45,6 +46,7 @@ export const jobKindIconsMap: Record<string, string> = {
+   HuggingFace: "hugging-face",
+   NvidiaNim: "nvidianim",
+   Nvidia: NVIDIA_WORKLOAD_ICON,
++  Amd: AMD_WORKLOAD_ICON,
+   VLLM: "vllm",
+   TGI: "tgi",
+ };
+diff --git a/control-plane/frontend/src/assets/icons/svg/amd.svg b/control-plane/frontend/src/assets/icons/svg/amd.svg
+new file mode 100644
+index 00000000..88db75ca
+--- /dev/null
++++ b/control-plane/frontend/src/assets/icons/svg/amd.svg
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- AMD arrow mark. Path data from Simple Icons (CC0-1.0); the view box shows only the arrow, not the wordmark. -->
++<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="18.1 8.9 6.1 6.1">
++<path fill="#000000" d="M18.324 9.137l1.559 1.56h2.556v2.557L24 14.814V9.137zM2 9.52l-2 4.96h1.309l.37-.982H3.9l.408.982h1.338L3.432 9.52zm4.209 0v4.955h1.238v-3.092l1.338 1.562h.188l1.338-1.556v3.091h1.238V9.52H10.47l-1.592 1.845L7.287 9.52zm6.283 0v4.96h2.057c1.979 0 2.88-1.046 2.88-2.472 0-1.36-.937-2.488-2.747-2.488zm1.237.91h.792c1.17 0 1.63.711 1.63 1.57 0 .728-.372 1.572-1.616 1.572h-.806zm-10.985.273l.791 1.932H2.008zm17.137.307l-1.604 1.603v2.25h2.246l1.604-1.607h-2.246z"/>
++</svg>

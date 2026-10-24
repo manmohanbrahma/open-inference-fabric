@@ -178,44 +178,73 @@ stage_runai_admin() {   # the owner's administrator account from the settings; t
   ok "log in to Run:ai as $RUNAI_ADMIN_EMAIL with the password from the settings"
 }
 
-# T-115: Run:ai counts AMD GPUs on nodes that also have NVIDIA GPUs (patches/runai/). The stage reruns when a patch,
-# the build script or a pinned version changes; RUNAI_PATCHES=none in the settings puts the stock images back.
-runai_patch_rev() { cat "$OIF_HOME"/patches/runai/build-cluster-sync.sh "$OIF_HOME"/patches/runai/"$RUNAI_VERSION"/*.patch 2>/dev/null \
-  | { cat; echo "$GO_BUILD_IMAGE $CRANE_VERSION $RUNAI_SOURCE_SHA256 ${RUNAI_PATCHES:-}"; } | sha256sum | cut -c1-12; }
-RUNAI_PATCHED_IMAGE=oif.local/runai-oss/cluster-sync:$RUNAI_VERSION-oif1
+# T-115: oif's patches to Run:ai (patches/runai/): cluster-sync counts AMD GPUs on nodes that also have NVIDIA GPUs,
+# the web UI shows the AMD logo for ROCm images. Each patched component is built from the tagged source in a Job,
+# layered onto its stock image, loaded into containerd and switched on. RUNAI_PATCHES=none puts the stock images back.
+# The stage reruns when a patch, a build script, a pinned version or RUNAI_PATCHES changes.
+runai_patch_rev() { cat "$OIF_HOME"/patches/runai/build-*.sh "$OIF_HOME"/patches/runai/"$RUNAI_VERSION"/*.patch 2>/dev/null \
+  | { cat; echo "$GO_BUILD_IMAGE $NODE_BUILD_IMAGE $CRANE_VERSION $CRANE_SHA256 $RUNAI_SOURCE_SHA256 ${RUNAI_PATCHES:-}"; } | sha256sum | cut -c1-12; }
+RUNAI_STOCK_REGISTRY=nvcr.io/nvidia/runai-oss
+RUNAI_PATCH_REGISTRY=oif.local/runai-oss
+# component  build image (variable)  patch file pattern
+RUNAI_PATCH_COMPONENTS=("cluster-sync GO_BUILD_IMAGE cluster-sync" "frontend NODE_BUILD_IMAGE frontend")
 
 register_stage runai-patches runai_patch_rev
 stage_runai_patches() {
-  local out=$STATE/build/runai patch img
+  local c comp bimg pat
   if [ "${RUNAI_PATCHES:-}" = none ]; then
-    kc -n runai patch runaiconfig runai --type json -p '[{"op":"remove","path":"/spec/cluster-sync/image"}]' >> "$LOG" 2>&1 || true
-    ok "Run:ai uses its stock cluster-sync image (RUNAI_PATCHES=none)"; return 0
+    for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do runai_patch_use "${c%% *}" stock; done
+    ok "Run:ai runs its stock images (RUNAI_PATCHES=none)"; return 0
   fi
-  ls "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*.patch >/dev/null 2>&1 || { warn "no oif patches for Run:ai $RUNAI_VERSION: stock images kept"; return 0; }
-  mkdir -p "$out"; rm -f "$out/cluster-sync.tar"
   kc create namespace oif-build --dry-run=client -o yaml | kc apply -f - >> "$LOG"
-  kc -n oif-build create configmap runai-patch-build --from-file="$OIF_HOME/patches/runai/build-cluster-sync.sh" --dry-run=client -o yaml | kc apply -f - >> "$LOG"
-  kc -n oif-build create configmap runai-patches --from-file="$OIF_HOME/patches/runai/$RUNAI_VERSION/" --dry-run=client -o yaml | kc apply -f - >> "$LOG"
-  kc -n oif-build delete job runai-patch-cluster-sync --ignore-not-found --wait=true >> "$LOG" 2>&1
-  export GO_BUILD_IMAGE RUNAI_VERSION RUNAI_SOURCE_SHA256 CRANE_VERSION RUNAI_PATCHED_IMAGE RUNAI_PATCH_OUT=$out
-  render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job rejected"
-  log "building cluster-sync with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*.patch | sed 's|./||' | paste -sd' ') (5-15 min)"
-  wait_for "cluster-sync built" 1800 15 bash -c \
-    "kubectl --kubeconfig $KCFG -n oif-build get job runai-patch-cluster-sync -o jsonpath='{.status.conditions[*].type}' | grep -qE 'Complete|Failed'" || true
-  kc -n oif-build logs job/runai-patch-cluster-sync 2>&1 | grep -E '^(==|ok|FAIL|---)' | sed 's/^/    /' | tee -a "$TLOG"
-  [ "$(kc -n oif-build get job runai-patch-cluster-sync -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/cluster-sync.tar" ] \
-    || die "cluster-sync build failed (kubectl -n oif-build logs job/runai-patch-cluster-sync)"
-  ctr -n k8s.io images import "$out/cluster-sync.tar" >> "$LOG" 2>&1 || die "cannot import the patched image into containerd"
-  img=$(ctr -n k8s.io images ls -q | grep -xF "$RUNAI_PATCHED_IMAGE") || die "image $RUNAI_PATCHED_IMAGE not found after import"
-  ok "patched image $img loaded into containerd"
-  patch=$(printf '{"spec":{"cluster-sync":{"image":{"registry":"%s","name":"%s","tag":"%s","pullPolicy":"IfNotPresent"}}}}' \
-    "${RUNAI_PATCHED_IMAGE%/*}" "$(basename "${RUNAI_PATCHED_IMAGE%:*}")" "${RUNAI_PATCHED_IMAGE##*:}")
-  kc -n runai patch runaiconfig runai --type merge -p "$patch" >> "$LOG" || die "RunaiConfig rejected the image override"
-  wait_for "cluster-sync runs the patched image" 300 10 bash -c \
-    "[ \"\$(kubectl --kubeconfig $KCFG -n runai get deploy cluster-sync -o jsonpath='{.spec.template.spec.containers[0].image}')\" = $RUNAI_PATCHED_IMAGE ] && kubectl --kubeconfig $KCFG -n runai rollout status deploy/cluster-sync --timeout=10s" \
-    || die "cluster-sync did not roll out the patched image (kubectl -n runai describe deploy cluster-sync)"
+  kc -n oif-build create configmap runai-patch-build $(printf -- '--from-file=%s ' "$OIF_HOME"/patches/runai/build-*.sh) \
+    --dry-run=client -o yaml | kc apply -f - >> "$LOG"
+  kc -n oif-build create configmap runai-patches --from-file="$OIF_HOME/patches/runai/$RUNAI_VERSION/" --dry-run=client -o yaml \
+    | kc apply -f - >> "$LOG"
+  for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do read -r comp bimg pat <<< "$c"
+    if ! ls "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$pat"*.patch >/dev/null 2>&1; then
+      runai_patch_use "$comp" stock; continue; fi
+    runai_patch_build "$comp" "${!bimg}"
+    runai_patch_use "$comp" patched
+  done
   wait_for "Run:ai counts every GPU of the node" 300 15 runai_nodes_total_gpus_ok || warn "Run:ai still counts fewer GPUs than the node offers"
   runai_api nodes | sed 's/^/    /' | tee -a "$TLOG"
+}
+runai_patch_build() {   # component build-image: Job -> image tarball -> containerd
+  local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1
+  mkdir -p "$out"; rm -f "$out/$comp.tar"
+  kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
+  COMPONENT=$comp BUILD_IMAGE=$2 BASE_IMAGE=$RUNAI_STOCK_REGISTRY/$comp:$RUNAI_VERSION NEW_IMAGE=$img RUNAI_PATCH_OUT=$out \
+    RUNAI_VERSION=$RUNAI_VERSION RUNAI_SOURCE_SHA256=$RUNAI_SOURCE_SHA256 CRANE_VERSION=$CRANE_VERSION CRANE_SHA256=$CRANE_SHA256 \
+    render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
+  log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min)"
+  wait_for "$comp built" 2400 15 bash -c \
+    "kubectl --kubeconfig $KCFG -n oif-build get job runai-patch-$comp -o jsonpath='{.status.conditions[*].type}' | grep -qE 'Complete|Failed'" || true
+  kc -n oif-build logs "job/runai-patch-$comp" 2>&1 | grep -E '^(==|ok|FAIL|---| *Tests|.*passed|.*failed)' | sed 's/^/    /' | tee -a "$TLOG"
+  [ "$(kc -n oif-build get job "runai-patch-$comp" -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/$comp.tar" ] \
+    || die "Run:ai $comp build failed (kubectl -n oif-build logs job/runai-patch-$comp)"
+  ctr -n k8s.io images import "$out/$comp.tar" >> "$LOG" 2>&1 || die "cannot import the patched $comp image into containerd"
+  ctr -n k8s.io images ls -q | grep -qxF "$img" || die "image $img not found after import"
+  ok "patched image $img loaded into containerd"
+}
+runai_patch_use() {   # component stock|patched: point Run:ai at the image and wait for the rollout
+  local comp=$1 reg=$RUNAI_STOCK_REGISTRY tag=$RUNAI_VERSION ns=runai deploy=$1
+  [ "$2" = patched ] && { reg=$RUNAI_PATCH_REGISTRY; tag=$RUNAI_VERSION-oif1; }
+  case $comp in
+    cluster-sync)   # the Run:ai operator owns this deployment: set the image in its RunaiConfig
+      if [ "$2" = patched ]; then
+        kc -n runai patch runaiconfig runai --type merge -p "{\"spec\":{\"cluster-sync\":{\"image\":{\"registry\":\"$reg\",\"name\":\"$comp\",\"tag\":\"$tag\",\"pullPolicy\":\"IfNotPresent\"}}}}" >> "$LOG" \
+          || die "RunaiConfig rejected the $comp image"
+      else
+        kc -n runai patch runaiconfig runai --type json -p '[{"op":"remove","path":"/spec/cluster-sync/image"}]' >> "$LOG" 2>&1 || true
+      fi ;;
+    frontend)       # a plain Helm deployment of the control plane; a later helm upgrade of runai-backend puts stock back
+      ns=runai-backend deploy=runai-backend-frontend
+      kc -n "$ns" set image "deploy/$deploy" "frontend=$reg/$comp:$tag" >> "$LOG" || die "cannot set the $comp image" ;;
+  esac
+  wait_for "Run:ai $comp runs the $2 image" 300 10 bash -c \
+    "kubectl --kubeconfig $KCFG -n $ns get deploy $deploy -o jsonpath='{.spec.template.spec.containers[0].image}' | grep -qxF '$reg/$comp:$tag' && kubectl --kubeconfig $KCFG -n $ns rollout status deploy/$deploy --timeout=10s" \
+    || die "$comp did not roll out the $2 image (kubectl -n $ns describe deploy $deploy)"
 }
 runai_nodes_total_gpus_ok() {   # every node's GPU count in Run:ai equals its nvidia.com/gpu + amd.com/gpu
   local want got; want=$(kc get nodes -o json | python3 -c 'import json,sys; print(sum(int(n["status"]["allocatable"].get(r,0)) for n in json.load(sys.stdin)["items"] for r in ("nvidia.com/gpu","amd.com/gpu")))')
