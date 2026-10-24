@@ -531,8 +531,8 @@
    "gridPos": {
     "x": 0,
     "y": 17,
-    "w": 12,
-    "h": 8
+    "w": 24,
+    "h": 6
    },
    "description": "Deserved (quota), allocated and pending GPUs per Run:ai project.",
    "targets": [
@@ -541,7 +541,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "oif:project_gpu_deserved",
+     "expr": "max by (project) (oif:project_gpu_deserved)",
      "legendFormat": "",
      "refId": "A",
      "instant": true,
@@ -553,7 +553,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "oif:project_gpu_allocated or oif:project_gpu_deserved * 0",
+     "expr": "max by (project) (oif:project_gpu_allocated or oif:project_gpu_deserved * 0)",
      "legendFormat": "",
      "refId": "B",
      "instant": true,
@@ -565,7 +565,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "oif:project_gpu_pending or oif:project_gpu_deserved * 0",
+     "expr": "max by (project) (oif:project_gpu_pending or oif:project_gpu_deserved * 0)",
      "legendFormat": "",
      "refId": "C",
      "instant": true,
@@ -614,9 +614,9 @@
     "uid": "prometheus"
    },
    "gridPos": {
-    "x": 12,
-    "y": 17,
-    "w": 12,
+    "x": 0,
+    "y": 23,
+    "w": 24,
     "h": 8
    },
    "targets": [
@@ -701,7 +701,7 @@
    "collapsed": false,
    "gridPos": {
     "x": 0,
-    "y": 25,
+    "y": 31,
     "w": 24,
     "h": 1
    },
@@ -717,7 +717,7 @@
    },
    "gridPos": {
     "x": 0,
-    "y": 26,
+    "y": 32,
     "w": 24,
     "h": 7
    },
@@ -728,7 +728,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "oif:gpu_quota{vendor=~\"$vendor\", type=\"hard\"}",
+     "expr": "max by (namespace, vendor) (oif:gpu_quota{vendor=~\"$vendor\", type=\"hard\"})",
      "legendFormat": "",
      "refId": "A",
      "instant": true,
@@ -740,7 +740,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "oif:gpu_quota{vendor=~\"$vendor\", type=\"used\"}",
+     "expr": "max by (namespace, vendor) (oif:gpu_quota{vendor=~\"$vendor\", type=\"used\"})",
      "legendFormat": "",
      "refId": "B",
      "instant": true,

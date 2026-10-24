@@ -12,6 +12,7 @@ Current state of the project. Update after every task.
 - T-104 installed on 2026-10-24: GPU Operator v26.7.1 (host driver), nvidia.com/gpu 1, CUDA vectorAdd passed in a pod, DCGM exporter 23 metrics.
 - T-111 and S-2 on 2026-10-25: AMD GPU Operator v1.5.1 on the in-kernel amdgpu driver; amd.com/gpu 1 (W7900, 45G, GC_11_0_0); pod got /dev/kfd and renderD; exporter healthy (raised UMC ECC threshold) and scraped by Prometheus. Run:ai quota enforced on amd.com/gpu (team-b NonPreemptibleOverQuota, team-a ran). One GPU quota counts both vendors.
 - T-113 on 2026-10-25 (ADR-015): project team-c, Run:ai quota 2, ResourceQuota oif-gpu-vendor caps 1 NVIDIA + 1 AMD; both pods ran, a second NVIDIA pod was refused (exceeded quota). Run:ai accepted quota 2 although its node view counts only the A6000.
+- T-106/T-112/T-114 on 2026-10-25: PrometheusRule oif-gpu (oif:gpu_*, oif:node_*, per-vendor allocatable/requested/caps, Run:ai project series; promtool tests), dashboards OIF Fleet and OIF Scheduling, Grafana at https://grafana.<runai-domain> (Run:ai wildcard certificate). Both vendors on every GPU panel. AMD graphics clock reads 0 at idle.
 
 ## Plan
 
@@ -19,11 +20,11 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-113 done, spike S-2 passed (guide 6). Next: T-112 recording rules, T-106/T-114 dashboards, T-107 uninstall test.
+P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-113 done, spike S-2 passed (guide 6). T-106, T-112, T-114 done (guide 7). Next: T-107 uninstall test, then Project 1 is complete.
 
 ## Next step
 
-T-112: `oif:gpu_*` recording rules over DCGM and the AMD exporter, with promtool unit tests; then T-106/T-114 Grafana dashboards showing both vendors.
+T-107: full `oif uninstall` on the reference host, check the host is back to the OS default, reinstall from scratch. Then Project 2 (Dynamo).
 
 ## Notes
 
