@@ -40,10 +40,13 @@ stage_kubernetes() {
     render "$K8S_TEMPLATES/kubeadm.yaml" > "$STATE/kubeadm.yaml" || die "cannot render the kubeadm configuration"
     systemctl enable kubelet >/dev/null 2>&1
     log "kubeadm init (pulls the control-plane images, 2-5 min)"
-    if ! kubeadm init --config "$STATE/kubeadm.yaml" --upload-certs >> "$LOG" 2>&1; then
-      kubeadm reset -f >> "$LOG" 2>&1 || true   # so the next run starts clean
-      die "kubeadm init failed (see $LOG; journalctl -u kubelet); run oif install again after fixing the cause"
+    # its output names join credentials: kept in the root-only state folder, not in the readable install log
+    if ! kubeadm init --config "$STATE/kubeadm.yaml" --skip-token-print > "$STATE/kubeadm-init.log" 2>&1; then
+      grep -E '^\[|error|ERROR' "$STATE/kubeadm-init.log" | tail -20 | redact
+      kubeadm reset -f >> "$STATE/kubeadm-init.log" 2>&1 || true   # so the next run starts clean
+      die "kubeadm init failed (sudo less $STATE/kubeadm-init.log; journalctl -u kubelet); run oif install again after fixing the cause"
     fi
+    grep -E '^\[(init|preflight|certs\] Generating "ca"|control-plane-check\] kube|addons)' "$STATE/kubeadm-init.log" | redact
   fi
   local kd=$UHOME/.kube
   [ -d "$kd" ] || rec "DIR $kd"
@@ -51,6 +54,17 @@ stage_kubernetes() {
   install -m 600 -o "$INSTALL_USER" -g "$(id -gn "$INSTALL_USER")" "$KCFG" "$kd/config"
   wait_for "API server answering" 300 5 kc get --raw /readyz || die "the API server did not come up (journalctl -u kubelet)"
   ok "Kubernetes $KUBERNETES_VERSION control plane on $HOST_IP:6443; kubectl works for $INSTALL_USER"
+}
+
+register_stage k8s-tokens
+stage_k8s_tokens() {   # one node: nothing joins it, so no join tokens or uploaded certificates are kept
+  local t
+  for t in $(kubeadm token list --kubeconfig "$KCFG" 2>/dev/null | awk 'NR>1 {print $1}' | cut -d. -f1); do
+    kubeadm token delete --kubeconfig "$KCFG" "$t" >/dev/null 2>&1 || warn "join token $t not deleted"; done
+  kc -n kube-system delete secret kubeadm-certs --ignore-not-found >/dev/null
+  [ -z "$(kubeadm token list --kubeconfig "$KCFG" 2>/dev/null | awk 'NR>1')" ] || die "join tokens remain (sudo kubeadm token list)"
+  redact_file "$LOG"   # installs before this stage existed copied kubeadm's join command into the log
+  ok "no join tokens or uploaded certificates left (single node)"
 }
 
 teardown_kubernetes() {   # everything kubeadm and the network plugin put on the host

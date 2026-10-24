@@ -5,7 +5,7 @@ STATE=${OIF_STATE:-/var/lib/oif}          # settings, manifest, logs, done marke
 CONF=$STATE/settings.conf
 MANIFEST=$STATE/manifest
 DONE=$STATE/done
-LOG=/var/log/oif-install.log              # readable by the installing user: oif never writes secrets to it
+LOG=/var/log/oif-install.log              # readable by the installing user: no secrets (see redact)
 UNINSTALL_LOG=/var/log/oif-uninstall.log
 TLOG=$LOG                                 # where on-screen lines are copied (/dev/null when stdout is the log)
 RESUME_UNIT=/etc/systemd/system/oif-resume.service
@@ -21,6 +21,10 @@ die()  { echo "${c_r}ERROR: $*${c_0}" | tee -a "$TLOG" >&2; exit 1; }
 ask()  { local v=""; [ "$INTERACTIVE" = 1 ] && read -r -p "$1${2:+ [$2]}: " v </dev/tty; echo "${v:-${2:-}}"; }
 ask_secret() { local v=""; [ "$INTERACTIVE" = 1 ] && { read -r -s -p "$1: " v </dev/tty; echo >/dev/tty; }; echo "$v"; }
 yesno() { local a; a=$(ask "$1 (y/n)" "${2:-y}"); [[ $a =~ ^[Yy] ]]; }
+
+# bootstrap tokens (abcdef.0123456789abcdef) and 64-hex keys such as kubeadm's certificate key
+redact() { sed -E 's/\b[a-z0-9]{6}\.[a-z0-9]{16}\b/<redacted>/g; s/\b[0-9a-f]{64}\b/<redacted>/g'; }
+redact_file() { local t; t=$(mktemp); redact < "$1" > "$t" && cat "$t" > "$1"; rm -f "$t"; }   # same inode: open log handles keep working
 
 state_init() { mkdir -p "$STATE" "$DONE"; chmod 700 "$STATE"; touch "$MANIFEST" "$LOG"; chmod 644 "$LOG"; }
 
