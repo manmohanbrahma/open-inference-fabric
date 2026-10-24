@@ -158,6 +158,17 @@ runai_api() {   # args...: the oif Run:ai client, logged in as the generated adm
 }
 pod_phase() { kc -n "$1" get pod gpu-quota-test -o jsonpath='{.status.phase}' 2>/dev/null; }
 
+register_stage runai-admin RUNAI_ADMIN_EMAIL   # a new e-mail in the settings runs it again
+stage_runai_admin() {   # the owner's administrator account from the settings; the generated test@run.ai stays for oif
+  [ -n "${RUNAI_ADMIN_EMAIL:-}" ] || { warn "RUNAI_ADMIN_EMAIL not set: only the generated administrator exists"; return 0; }
+  local why out
+  why=$(check_runai_password "${RUNAI_ADMIN_PASSWORD:-}") \
+    || die "RUNAI_ADMIN_PASSWORD: $why; set a new one with 'sudo ./oif install --reconfigure'"
+  out=$(RUNAI_NEW_PASSWORD=$RUNAI_ADMIN_PASSWORD runai_api admin "$RUNAI_ADMIN_EMAIL" 2>&1) || die "Run:ai administrator $RUNAI_ADMIN_EMAIL: $out"
+  sed 's/^/    /' <<< "$out" | tee -a "$TLOG"
+  ok "log in to Run:ai as $RUNAI_ADMIN_EMAIL with the password from the settings"
+}
+
 register_stage runai-quota
 stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (quota 0) waits even on a free GPU (over-quota is off by default)
   local a b reason

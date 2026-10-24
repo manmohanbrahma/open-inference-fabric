@@ -5,6 +5,7 @@ Credentials come from the environment (RUNAI_URL, RUNAI_USER, RUNAI_PASSWORD, RU
 never printed. Commands:
   check                                  log in and print the clusters
   project NAME GPU_DESERVED GPU_LIMIT    create the project if missing (GPU_LIMIT -1 = no limit), print its namespace
+  admin EMAIL                            make EMAIL a System administrator with the password in RUNAI_NEW_PASSWORD
 """
 import json
 import os
@@ -100,6 +101,63 @@ def project(token: str, name: str, deserved: float, limit: float) -> None:
     sys.exit(f"project {name} has no namespace after 5 min")
 
 
+def try_login(user: str, password: str) -> str | None:
+    status, out = call("POST", "/api/v1/token", {"grantType": "password", "username": user, "password": password})
+    return out["accessToken"] if status == 200 and isinstance(out, dict) and out.get("accessToken") else None
+
+
+def admin(token: str, email: str) -> None:
+    """Make EMAIL a local System administrator of the whole tenant with the password in RUNAI_NEW_PASSWORD."""
+    new = os.environ["RUNAI_NEW_PASSWORD"]
+    status, users = call("GET", "/api/v1/users", token=token)
+    if status != 200:
+        sys.exit(f"GET users: HTTP {status} {users}")
+    user = next((u for u in users if u.get("username", "").lower() == email.lower()), None)
+    temp = None
+    if user is None:
+        status, out = call("POST", "/api/v1/users", {"email": email, "resetPassword": False}, token)
+        if status not in (200, 201):
+            sys.exit(f"create user {email}: HTTP {status} {out}")
+        user, temp = {"id": out["id"]}, out["tempPassword"]
+        print(f"user {email} created")
+    # the System administrator role, at the scope of the tenant the generated administrator holds it on
+    status, out = call("GET", "/api/v1/authorization/access-rules", token=token)
+    if status != 200:
+        sys.exit(f"GET access rules: HTTP {status} {out}")
+    rules = out.get("accessRules", [])
+    sysadmin = next((r for r in rules if r.get("roleName") == "System administrator" and r.get("scopeType") == "tenant"), None)
+    if sysadmin is None:
+        sys.exit("no System administrator access rule on the tenant to copy")
+    if not any(r.get("subjectId", "").lower() == email.lower() and r.get("roleId") == sysadmin["roleId"]
+               and r.get("scopeType") == "tenant" for r in rules):
+        body = {"subjectId": email, "subjectType": "user", "roleId": sysadmin["roleId"],
+                "scopeId": sysadmin["scopeId"], "scopeType": "tenant"}
+        status, out = call("POST", "/api/v1/authorization/access-rules", body, token)
+        if status not in (200, 201):
+            sys.exit(f"access rule for {email}: HTTP {status} {out}")
+        print(f"{email}: System administrator on tenant {sysadmin.get('scopeName', sysadmin['scopeId'])}")
+    if try_login(email, new):
+        print(f"{email} logs in with the configured password")
+        return
+    if temp is None:   # existing user with another password: issue a temporary one, then set ours
+        status, out = call("POST", f"/api/v1/users/{user['id']}/password", {}, token)
+        if status != 200 or not isinstance(out, dict) or not out.get("tempPassword"):
+            sys.exit(f"reset password of {email}: HTTP {status}")
+        temp = out["tempPassword"]
+    user_token = try_login(email, temp)
+    if not user_token:
+        sys.exit(f"{email} cannot log in with its temporary password")
+    status, out = call("POST", "/api/v1/me/password", {"currentPassword": temp, "newPassword": new}, user_token)
+    if status not in (200, 204):
+        sys.exit(f"set password of {email}: HTTP {status} {out} (Run:ai's password policy: upper and lower case, a digit, a symbol)")
+    for _ in range(12):   # the identity service may take a moment to accept the new password
+        if try_login(email, new):
+            print(f"{email} logs in with the configured password")
+            return
+        time.sleep(5)
+    sys.exit(f"{email} does not log in with the configured password")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     token = login()
@@ -108,6 +166,8 @@ def main() -> None:
             print(c.get("name"), c.get("uuid"), c.get("version", ""), c.get("lastLiveness", ""))
     elif cmd == "project" and len(sys.argv) == 5:
         project(token, sys.argv[2], float(sys.argv[3]), float(sys.argv[4]))
+    elif cmd == "admin" and len(sys.argv) == 3:
+        admin(token, sys.argv[2])
     else:
         sys.exit(__doc__)
 
