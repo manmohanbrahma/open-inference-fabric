@@ -1,0 +1,27 @@
+# Proves a pod gets the GPU: nvidia-smi lists it, then the CUDA vectorAdd sample runs on it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oif-gpu-test
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda
+  namespace: oif-gpu-test
+spec:
+  restartPolicy: Never
+  runtimeClassName: nvidia
+  initContainers:
+    - name: nvidia-smi
+      image: ${CUDA_SAMPLE_IMAGE}
+      command: ["nvidia-smi", "-L"]
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+  containers:
+    - name: vectoradd
+      image: ${CUDA_SAMPLE_IMAGE}
+      resources:
+        limits:
+          nvidia.com/gpu: 1

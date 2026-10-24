@@ -1,0 +1,5 @@
+# NVIDIA GPU Operator: the chart's default stack (toolkit, device plugin, GPU feature discovery, DCGM exporter,
+# Node Feature Discovery, MIG manager, CDI), except the driver: the host already runs the NVIDIA driver from the
+# Ubuntu archive (installed by oif, same version the chart would build).
+driver:
+  enabled: false
