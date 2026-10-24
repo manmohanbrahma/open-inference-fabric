@@ -64,8 +64,11 @@ print(json.dumps({"data": {"Corefile": os.environ["BLOCK"].rstrip("\n") + "\n" +
   kc -n kube-system rollout restart deploy/coredns >> "$LOG"
   kc -n kube-system rollout status deploy/coredns --timeout=180s >> "$LOG" || die "CoreDNS did not restart (kubectl -n kube-system logs deploy/coredns)"
   dnsip=$(kc -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}')
-  r=$(dns_query "$dnsip" "check.$RUNAI_DOMAIN")
-  [ "$r" = "rcode 0 $INGRESS_IP" ] || die "cluster DNS answers '$r' for check.$RUNAI_DOMAIN (expected $INGRESS_IP)"
+  # old CoreDNS pods keep answering for a few seconds after the rollout reports done: wait for the new answer
+  local n=0; until [ "$(dns_query "$dnsip" "check.$RUNAI_DOMAIN")" = "rcode 0 $INGRESS_IP" ] \
+    && [ "$(dns_query "$dnsip" "$RUNAI_DOMAIN")" = "rcode 0 $INGRESS_IP" ]; do
+    n=$((n + 1)); [ $n -ge 30 ] && die "cluster DNS answers '$(dns_query "$dnsip" "check.$RUNAI_DOMAIN")' for check.$RUNAI_DOMAIN (expected $INGRESS_IP)"
+    sleep 2; done
   ok "cluster DNS: $RUNAI_DOMAIN and *.$RUNAI_DOMAIN -> $INGRESS_IP"
 }
 
