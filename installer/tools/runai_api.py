@@ -53,6 +53,18 @@ def clusters(token: str) -> list:
     return out
 
 
+def node_pool(token: str, cluster: str, name: str) -> dict:
+    """The node pool's id and name (projects reference node pools by id)."""
+    for path in (f"/api/v1/node-pools?filterBy=clusterId=={cluster}", "/api/v1/node-pools"):
+        status, out = call("GET", path, token=token)
+        if status == 200:
+            pools = out.get("nodePools", out) if isinstance(out, dict) else out
+            for p in pools or []:
+                if p.get("name") == name and (not p.get("clusterId") or p.get("clusterId") == cluster):
+                    return {"id": str(p["id"]), "name": p["name"]}
+    sys.exit(f"node pool {name} not found (GET /api/v1/node-pools: HTTP {status})")
+
+
 def project(token: str, name: str, deserved: float, limit: float) -> None:
     status, out = call("GET", "/api/v1/org-unit/projects", token=token)
     if status != 200:
@@ -65,7 +77,8 @@ def project(token: str, name: str, deserved: float, limit: float) -> None:
         gpu = {"deserved": deserved, "overQuotaWeight": 0 if limit == deserved else 2}
         if limit >= 0:
             gpu["limit"] = limit
-        body = {"name": name, "clusterId": cl[0]["uuid"], "resources": [{"nodePool": {"name": "default"}, "gpu": gpu}]}
+        pool = node_pool(token, cl[0]["uuid"], "default")
+        body = {"name": name, "clusterId": cl[0]["uuid"], "resources": [{"nodePool": {"id": pool["id"], "name": pool["name"]}, "gpu": gpu}]}
         status, out = call("POST", "/api/v1/org-unit/projects", body, token)
         if status not in (200, 201, 202):
             sys.exit(f"create project {name}: HTTP {status} {out}")
