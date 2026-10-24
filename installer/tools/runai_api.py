@@ -78,8 +78,10 @@ def project(token: str, name: str, deserved: float, limit: float) -> None:
         cl = clusters(token)
         if not cl:
             sys.exit("no Run:ai cluster registered")
-        gpu = {"deserved": deserved, "overQuotaWeight": 0 if limit == deserved else 2}
-        if limit >= 0:
+        # with Run:ai's over-quota feature off (the default) the quota is a hard limit and the API rejects
+        # over-quota weights; a limit is only sent when it differs from the quota
+        gpu = {"deserved": deserved}
+        if 0 <= limit != deserved:
             gpu["limit"] = limit
         pool = node_pool(token, cl[0]["uuid"], "default")
         body = {"name": name, "clusterId": cl[0]["uuid"], "resources": [{"nodePool": {"id": pool["id"], "name": pool["name"]}, "gpu": gpu}]}

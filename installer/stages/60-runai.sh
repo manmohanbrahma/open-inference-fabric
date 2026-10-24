@@ -159,12 +159,12 @@ runai_api() {   # args...: the oif Run:ai client, logged in as the generated adm
 pod_phase() { kc -n "$1" get pod gpu-quota-test -o jsonpath='{.status.phase}' 2>/dev/null; }
 
 register_stage runai-quota
-stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (quota 0, no over-quota) waits even on a free GPU
+stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (quota 0) waits even on a free GPU (over-quota is off by default)
   local a b reason
   runai_api check | sed 's/^/    cluster: /' | tee -a "$TLOG"
   a=$(runai_api project team-a 1 1) || die "project team-a: $a"
   b=$(runai_api project team-b 0 0) || die "project team-b: $b"
-  ok "projects team-a (1 GPU, namespace $a) and team-b (0 GPU, no over-quota, namespace $b)"
+  ok "projects team-a (1 GPU, namespace $a) and team-b (0 GPU, namespace $b)"
   export CUDA_SAMPLE_IMAGE
   kc -n "$a" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1; kc -n "$b" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
   # 1. team-b alone, with the GPU free: the quota alone must keep it waiting
