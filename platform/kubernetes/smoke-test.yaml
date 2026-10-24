@@ -1,0 +1,51 @@
+# Proves storage and load balancing: a pod writes to a local-path volume and serves it through a LoadBalancer.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oif-smoke
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: oif-smoke
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web
+  namespace: oif-smoke
+  labels:
+    app: web
+spec:
+  containers:
+    - name: web
+      image: ${SMOKE_IMAGE}
+      command: ["sh", "-c", "echo oif-smoke-ok > /data/index.html && exec httpd -f -p 8080 -h /data"]
+      ports:
+        - containerPort: 8080
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: oif-smoke
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 8080

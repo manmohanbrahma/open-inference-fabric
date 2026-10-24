@@ -69,7 +69,8 @@ uninstall_run() {
 
 replay_manifest() {   # reverse every recorded change, newest first; package removal is separate (safe_purge)
   local kind rest t redo=no datadirs=()
-  for t in "${TEARDOWNS[@]}"; do recorded "TEARDOWN $t" && { log "teardown: $t"; "teardown_${t//-/_}"; }; done
+  local i; for (( i=${#TEARDOWNS[@]}-1; i>=0; i-- )); do t=${TEARDOWNS[i]}   # later layers first (Kubernetes before containerd)
+    recorded "TEARDOWN $t" && { log "teardown: $t"; "teardown_${t//-/_}"; }; done
   while read -r kind rest; do
     case $kind in
       SERVICE)  systemctl disable --now "$rest" >/dev/null 2>&1 || true; ok "stopped $rest" ;;

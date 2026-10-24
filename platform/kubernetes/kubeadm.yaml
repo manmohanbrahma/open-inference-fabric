@@ -1,0 +1,27 @@
+# kubeadm configuration for a single-node cluster whose control plane also runs workloads.
+# Rendered by oif (stage kubernetes); the placeholders come from versions.env and the saved settings.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: ${HOST_IP}
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: ${HOST_IP}
+  taints: []                    # no control-plane taint: GPU workloads run on this node
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v${KUBERNETES_VERSION}
+clusterName: oif
+controlPlaneEndpoint: ${HOST_IP}:6443
+networking:
+  podSubnet: ${POD_CIDR}
+  serviceSubnet: ${SERVICE_CIDR}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+maxPods: ${KUBELET_MAX_PODS}

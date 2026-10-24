@@ -1,0 +1,16 @@
+# Calico through the Tigera operator: VXLAN overlay on the pod network, no BGP (single node, no router peering).
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    bgp: Disabled
+    ipPools:
+      - name: default-ipv4-ippool
+        cidr: ${POD_CIDR}
+        encapsulation: VXLAN
+        natOutgoing: Enabled
+        nodeSelector: all()
+    nodeAddressAutodetectionV4:
+      kubernetes: NodeInternalIP
