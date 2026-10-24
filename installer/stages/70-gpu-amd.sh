@@ -90,3 +90,29 @@ stage_amd_quota() {   # S-2: Run:ai quotas count amd.com/gpu (team-a quota 1 run
   kc -n "$a" delete pod amd-quota-test --wait=true >> "$LOG" 2>&1; kc -n "$b" delete pod amd-quota-test --wait=true >> "$LOG" 2>&1
   ok "S-2 passed: Run:ai enforces quotas on amd.com/gpu"
 }
+
+register_stage vendor-quota
+stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped at 1 NVIDIA + 1 AMD by a Kubernetes ResourceQuota
+  local alloc c out
+  alloc=$(kc get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}/{.items[0].status.allocatable.amd\.com/gpu}')
+  [ "${alloc%/*}" -ge 1 ] 2>/dev/null && [ "${alloc#*/}" -ge 1 ] 2>/dev/null || { warn "per-vendor quota test needs an NVIDIA and an AMD GPU: skipped"; return 0; }
+  c=$(runai_api project team-c 2 2) || die "project team-c: $c"
+  export BUSYBOX_IMAGE CUDA_SAMPLE_IMAGE
+  NS=$c NVIDIA_GPU_CAP=1 AMD_GPU_CAP=1 render "$OIF_HOME/platform/runai/vendor-quota.yaml" | kc apply -f - >> "$LOG" || die "ResourceQuota for $c rejected"
+  ok "project team-c (Run:ai quota 2 GPUs, namespace $c) capped at 1 NVIDIA + 1 AMD GPU"
+  kc -n "$c" delete pod gpu-quota-test gpu-quota-test-2 amd-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
+  NS=$c render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "NVIDIA test pod for team-c rejected"
+  NS=$c render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-c rejected"
+  wait_for "team-c runs one GPU of each vendor" 300 5 bash -c \
+    "[ \"\$(kubectl --kubeconfig $KCFG -n $c get pod gpu-quota-test amd-quota-test -o jsonpath='{.items[*].status.phase}')\" = 'Running Running' ]" \
+    || die "team-c's GPU pods did not both start (kubectl -n $c describe pod gpu-quota-test amd-quota-test)"
+  ok "team-c runs $(kc -n "$c" logs gpu-quota-test 2>/dev/null | head -1 | cut -d'(' -f1)and the AMD GPU ($(kc -n "$c" logs amd-quota-test 2>/dev/null | tr '\n' ' '))"
+  # a second NVIDIA GPU pod: inside Run:ai's quota of 2, over the NVIDIA cap of 1
+  if out=$(NS=$c render "$OIF_HOME/platform/runai/quota-test.yaml" | sed 's/name: gpu-quota-test$/name: gpu-quota-test-2/' | kc create -f - 2>&1); then
+    die "a second NVIDIA GPU pod was accepted in $c although the NVIDIA cap is 1 (kubectl -n $c describe resourcequota oif-gpu-vendor)"
+  fi
+  grep -q 'exceeded quota' <<< "$out" || die "second NVIDIA pod failed for another reason: $out"
+  ok "a second NVIDIA GPU pod is refused: $(grep -o 'exceeded quota.*' <<< "$out" | head -1)"
+  kc -n "$c" delete pod gpu-quota-test amd-quota-test --wait=true >> "$LOG" 2>&1
+  ok "T-113 passed: per-vendor GPU caps inside one Run:ai project (project team-c and its quota kept)"
+}

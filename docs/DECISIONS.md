@@ -88,3 +88,10 @@ Architecture decision records. Change a decision only with a new ADR that supers
 - **Date:** 2026-10-24. **Decided by:** project owner (no DNS server in the lab).
 - **Decision:** Run:ai's domain defaults to `runai.<first-MetalLB-address-with-dashes>.sslip.io`; sslip.io's public DNS answers any name containing an address with that address, so the domain and its wildcards (`*.runai...`, `*.inference.runai...`) resolve without a DNS server. TLS comes from a private CA created on the host; users import its public certificate once. `RUNAI_DOMAIN` in `.env` replaces sslip.io with an organisation's own domain.
 - **Consequences:** clients and pods need public DNS resolution; the lab address appears in DNS names (not secret, but visible to the public resolver). The CA key never leaves the root-only state folder.
+
+## ADR-015: Per-vendor GPU quotas through Kubernetes ResourceQuota
+
+- **Date:** 2026-10-25. **Decided by:** project owner, after T-113 research.
+- **Context:** a Run:ai (KAI) node pool is one node label, so a node belongs to one pool; the reference host has both GPUs in one node, so `nvidia` and `amd` pools cannot be split. KAI queues have a single `gpu` quota, which counts `nvidia.com/gpu` and `amd.com/gpu` alike (S-2). The Run:ai control plane counts only NVIDIA GPUs in its node and node-pool views (`gpuCount: 1` on the reference host).
+- **Decision:** Run:ai keeps one total GPU quota per project; oif adds a Kubernetes ResourceQuota (`oif-gpu-vendor`) in the project's namespace that caps `requests.nvidia.com/gpu` and `requests.amd.com/gpu` separately. Rejected: a second Kubernetes node as a VM with the W7900 passed through (much larger host change; Run:ai would still not count the AMD GPU); accepting a shared quota with no per-vendor cap.
+- **Consequences:** a pod over a vendor cap is refused when it is created instead of waiting in the queue, and there is no borrowing per vendor between projects. Run:ai's UI and reports show NVIDIA GPUs only; both vendors appear side by side in oif's Grafana dashboards (T-114). On a multi-node cluster with one vendor per node, real node pools replace this.

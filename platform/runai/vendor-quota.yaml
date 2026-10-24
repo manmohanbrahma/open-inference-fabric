@@ -1,0 +1,13 @@
+# Per-vendor GPU caps for a Run:ai project's namespace (ADR-015). Run:ai's own quota is one GPU count for both
+# vendors; this Kubernetes quota caps each vendor inside it. A pod over a cap is refused when it is created.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: oif-gpu-vendor
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/managed-by: oif
+spec:
+  hard:
+    requests.nvidia.com/gpu: "${NVIDIA_GPU_CAP}"
+    requests.amd.com/gpu: "${AMD_GPU_CAP}"
