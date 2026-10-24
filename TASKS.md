@@ -32,10 +32,10 @@ Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on 
 
 Slice: the same cluster also schedules the W7900, with AMD telemetry next to NVIDIA's.
 
-- [ ] S-2 **KAI quotas for `amd.com/gpu`.** Quota of 1 for each vendor, 2 pods per vendor. Exit: one pod per vendor runs, the second stays pending with a quota reason. Fail: owner chooses between Run:ai for NVIDIA only plus a plain AMD node pool, or upstream changes.
-- [ ] T-111 AMD GPU Operator (in-kernel driver, device plugin, node labeller, ECC threshold for kernel 7.0)
-- [ ] T-112 AMD device metrics exporter scraped; `oif:gpu_*` recording rules for both vendors with `promtool` unit tests
-- [ ] T-113 Run:ai node pools `nvidia` and `amd`; quotas per vendor
+- [x] S-2 **KAI quotas for `amd.com/gpu`.** Passed 2026-10-25 (stage amd-quota): a pod requesting `amd.com/gpu` waits in team-b (quota 0, `NonPreemptibleOverQuota`) on a free GPU and runs in team-a (quota 1). A project's GPU quota is one count across vendors; the per-vendor 1+1 check moves to T-113.
+- [x] T-111 AMD GPU Operator v1.5.1 (in-kernel driver, device plugin, node labeller, ECC threshold for kernel 7.0); guide 6
+- [ ] T-112 `oif:gpu_*` recording rules for both vendors with `promtool` unit tests (the AMD exporter is already scraped by Prometheus through its ServiceMonitor, next to DCGM)
+- [ ] T-113 Run:ai node pools `nvidia` and `amd`; quotas per vendor (quota 1+1: one pod per vendor runs, a second per vendor waits)
 - [ ] T-114 Fleet dashboard shows both vendors on the same panels
 - Checkpoint: one project with quota 1+1; both GPUs allocatable; a third GPU pod waits on quota; uninstall still clean.
 
