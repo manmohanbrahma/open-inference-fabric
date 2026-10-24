@@ -24,7 +24,7 @@ for p in /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d /var/lib/
   /etc/modprobe.d/90-oif-nouveau.conf /etc/modprobe.d/90-oif-vfio.conf /etc/modules-load.d/90-oif.conf \
   /etc/modules-load.d/90-oif-vfio.conf /etc/sysctl.d/90-oif.conf /etc/systemd/system/oif-resume.service \
   /usr/local/bin/helm /usr/local/nvidia /etc/cdi /var/run/cdi /opt/local-path-provisioner \
-  /var/lib/amd-metrics-exporter /var/run/exporter /var/log/oif-install.log "$HOME/.kube" "$HOME/oif-ca.crt"; do
+  /var/lib/amd-metrics-exporter /var/run/exporter /var/log/oif-install.log "$HOME/.kube/config" "$HOME/oif-ca.crt"; do
   [ -e "$p" ] && trace "$p"
 done
 sudo -n test -e /var/lib/oif 2>/dev/null && trace /var/lib/oif   # root-only; checked when sudo needs no password
