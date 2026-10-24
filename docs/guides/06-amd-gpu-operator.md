@@ -126,5 +126,5 @@ A pod over a vendor cap is refused when it is created (`exceeded quota`), not qu
 
 ## Known limits
 
-- **Run:ai counts NVIDIA GPUs only.** Its UI and node APIs report `gpuCount: 1` (the A6000) on this host; the scheduler still enforces quotas on the AMD GPU. Both vendors are shown together in oif's Grafana dashboards (T-114).
+- **Run:ai has no vendor split.** Its GPU inventory (Nodes and Node pools pages, node API) lists only the A6000 (`gpuCount: 1`), while its allocation figures count the AMD GPU too: with one pod per vendor running, the node shows 1 A6000 with 2 GPUs allocated, and the project 2. The vendor split is in oif's Grafana dashboards (T-114).
 - The W7900 is a workstation GPU; Run:ai documents data-centre GPUs. Whole-GPU scheduling works; GPU fractions are NVIDIA-only.

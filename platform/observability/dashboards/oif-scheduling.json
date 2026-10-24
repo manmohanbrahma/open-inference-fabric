@@ -517,7 +517,7 @@
    },
    "options": {
     "mode": "markdown",
-    "content": "Run:ai's queue metrics count **NVIDIA GPUs only**; AMD GPU use is in the rows above and in the per-vendor caps below (ADR-015)."
+    "content": "Run:ai's project figures count GPUs of **both vendors** in one number; the vendor split is in the rows above and in the per-vendor caps below (ADR-015)."
    }
   },
   {
@@ -534,7 +534,7 @@
     "w": 24,
     "h": 6
    },
-   "description": "Deserved (quota), allocated and pending GPUs per Run:ai project.",
+   "description": "Deserved (quota), allocated and pending GPUs per Run:ai project, NVIDIA and AMD together.",
    "targets": [
     {
      "datasource": {

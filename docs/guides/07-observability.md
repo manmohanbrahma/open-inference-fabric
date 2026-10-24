@@ -9,7 +9,7 @@
 - **OIF Scheduling:** GPUs offered, in use and waiting per vendor; Run:ai project quotas; the per-vendor caps from guide 6.
 - **Grafana on HTTPS** at `https://grafana.runai.<lb-ip>.sslip.io`, with the same certificate and CA as Run:ai.
 
-Run:ai's own screens count NVIDIA GPUs only (ADR-015); these dashboards are where both vendors appear side by side.
+Run:ai adds both vendors into one GPU number and its inventory names only the NVIDIA GPU (ADR-015); these dashboards are where the vendors appear side by side.
 
 ## Before you start
 
@@ -93,7 +93,7 @@ All GPU series carry `{vendor, model, gpu, node}`.
 | `oif:gpu_allocatable` | kube-state-metrics, node allocatable | vendor, node |
 | `oif:gpu_requested` | kube-state-metrics, pod requests of Running and Pending pods | vendor, namespace, phase |
 | `oif:gpu_quota` | kube-state-metrics, ResourceQuota `oif-gpu-vendor` | vendor, namespace, type (hard, used) |
-| `oif:project_gpu_deserved`, `_allocated`, `_pending` | Run:ai queue metrics (NVIDIA only) | project |
+| `oif:project_gpu_deserved`, `_allocated`, `_pending` | Run:ai queue metrics (both vendors in one count) | project |
 
 Query them directly in Grafana's **Explore**, for example `oif:gpu_power_watts` or `sum by (vendor) (oif:gpu_requested{phase="Running"})`.
 
@@ -127,4 +127,4 @@ Nothing on the host itself: a PrometheusRule, a ConfigMap, a TLS secret and an i
 | Dashboards missing in Grafana | `kubectl -n monitoring logs deploy/kps-grafana -c grafana-sc-dashboard`; the ConfigMap must carry `grafana_dashboard=1`. |
 | Browser warns about the certificate | Import `~/oif-ca.crt` (guide 5); the Grafana name is covered by the Run:ai wildcard certificate. |
 | `observability-verify` waits on `oif:gpu_*` | Rules are evaluated every 15-30 s after loading; a series missing for one vendor is printed with the vendors it has. |
-| Run:ai project tables count no AMD use | Expected: Run:ai counts NVIDIA GPUs only (ADR-015). Use the "GPUs by vendor" row. |
+| Run:ai's Nodes page shows more GPUs allocated than it has | Expected: Run:ai counts the AMD GPU's allocation but lists only NVIDIA GPUs in its inventory (ADR-015). Use the "GPUs by vendor" row for the split. |

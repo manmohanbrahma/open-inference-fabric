@@ -1,7 +1,7 @@
 # oif:* recording rules (T-112): both GPU vendors on one schema, so one dashboard panel shows both.
 # GPU series carry {vendor, model, gpu, node}; units are in the name (ratio 0-1, bytes, watts, celsius, hz).
 # NVIDIA from the DCGM exporter (memory in MiB, clocks in MHz); AMD from the AMD device metrics exporter (VRAM in MiB, clocks in MHz).
-# Scheduling series come from kube-state-metrics (both vendors) and Run:ai's queue metrics (Run:ai counts NVIDIA GPUs only).
+# Scheduling series come from kube-state-metrics (both vendors) and Run:ai's queue metrics (one GPU count for both vendors).
 # Plain Prometheus rule file: tested with promtool (oif-gpu.test.yaml); the installer wraps it in a PrometheusRule.
 groups:
   - name: oif-gpu
@@ -114,7 +114,7 @@ groups:
             kube_resourcequota{resource=~"requests\\.(nvidia|amd)\\.com/gpu"},
             "vendor", "$1", "resource", "requests\\.(nvidia|amd)\\.com/gpu"))
 
-      # Run:ai projects: deserved (quota), allocated and pending GPUs; Run:ai counts NVIDIA GPUs only
+      # Run:ai projects: deserved (quota), allocated and pending GPUs, both vendors in one count
       - record: oif:project_gpu_deserved
         expr: max by (project) (runai_deserved_gpu_count_per_queue{project!=""})
       - record: oif:project_gpu_allocated
