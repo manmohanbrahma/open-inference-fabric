@@ -56,3 +56,22 @@ Architecture decision records. Change a decision only with a new ADR that supers
 - **Date:** 2026-10-24. **Proposed.**
 - **Decision:** `oif bench` runs vendors sequentially and waits until both GPUs are below a temperature threshold before each run.
 - **Why:** on the reference chassis both GPUs throttle when loaded together, which would make results meaningless.
+
+## ADR-010: Three projects, built in order
+
+- **Date:** 2026-10-24. **Decided by:** project owner. **Refines** ADR-004.
+- **Decision:** Project 1 builds the orchestration platform (Run:ai on NVIDIA with the default stack, then AMD GPUs with the AMD GPU Operator and its metrics exporter). Project 2 adds Dynamo serving on NVIDIA (vLLM, SGLang, TensorRT-LLM), then on AMD (vLLM and SGLang), then engine overlays for a fair comparison. Project 3 (unified API and AI gateway, self-service scheduling) is planned after Project 2.
+- **Why:** each project is useful on its own and proves the layer below before the next is built on it.
+
+## ADR-011: Engine overlays for a fair cross-vendor comparison
+
+- **Date:** 2026-10-24. **Decided by:** project owner.
+- **Decision:** besides Dynamo's default engine versions, build overlay images that keep the Dynamo runtime pinned and replace the engine with the latest vLLM or SGLang release, using the same engine version and the same serving profile on CUDA and ROCm.
+- **Why:** Dynamo's NVIDIA images and any ROCm image would otherwise carry different engine versions, so differences in results could come from software rather than hardware.
+- **How:** the engine runs in the worker process (`dynamo.vllm`, `dynamo.sglang`), so the overlay is a layered image, not a Kubernetes sidecar container. A separate engine container behind the frontend would lose KV-aware routing and engine metrics in Dynamo.
+- **Risk:** a newer engine may break Dynamo's worker integration; each overlay is checked (T-222) and the result recorded.
+
+## ADR-012: Rules of the fair comparison
+
+- **Date:** 2026-10-24. **Decided by:** project owner.
+- **Decision:** a result is comparable only if the model weights and dtype, Dynamo version, engine version, serving profile, benchmark profile (AIPerf, input and output lengths, concurrency, warm-up, 3 repeats) and the one-GPU-at-a-time rule (ADR-009) are the same. Every report lists versions, image digests, flags, power limits and clocks. TensorRT-LLM results are an NVIDIA-only reference column.

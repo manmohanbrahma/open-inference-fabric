@@ -1,66 +1,85 @@
 # Tasks
 
-Work through tasks in order: understand, plan, implement, test, review, commit, update docs. Each phase ends with a working vertical slice.
+Work through tasks in order: understand, plan, implement, test, review, commit, update docs. Each step ends with a working vertical slice.
 
 Status: `[ ]` open, `[~]` in progress, `[x]` done, `[-]` dropped.
 
-## Phase 0: Project
+The work is split into three projects (ADR-010). Each builds on the one before, and each step inside a project is a checkpoint the owner signs off before the next starts.
+
+## Phase 0: Repository
 
 - [x] T-001 Research, PRD, architecture, design, rules, decisions, test plan, security, tasks
 - [ ] T-002 Public GitHub repository, licence, README; push
 - [ ] T-003 CI: shellcheck, yamllint, markdown link check, secret scan (gitleaks) on every push
 
-## Phase 1: Spikes (prove the risky parts before building around them)
+## Project 1: Orchestration platform
 
-Each spike has exit criteria. A spike that fails stops the plan at a decision gate for the owner.
+### P1.1 Run:ai on NVIDIA, default stack
 
-- [ ] S-1 **Dynamo on ROCm (W7900).** Build an image from a ROCm vLLM base plus the Dynamo runtime (no NIXL, no KVBM); run `dynamo.frontend` and `dynamo.vllm` with file discovery in podman on the W7900.
-  Exit: the worker registers, `/v1/chat/completions` answers (streaming and non-streaming), and 10 minutes of AIPerf at concurrency 8 complete without errors.
-- [ ] S-2 **KAI quotas for AMD.** On a throw-away Kind or kubeadm cluster, install KAI Scheduler; create a queue with quota 1 for `amd.com/gpu` and for `nvidia.com/gpu`; submit 2 pods per vendor.
-  Exit: one pod per vendor runs and the second stays pending with a quota reason.
-- [ ] S-3 **Run:ai open source on single-node kubeadm 1.35.** Install the control plane and cluster from the NGC Community chart or `runai-installer`.
-  Exit: UI and API reachable, cluster connected, a project with a GPU quota created; footprint (CPU, memory, pods) recorded.
-- [ ] S-4 **Dynamo operator with KAI.** Deploy a DynamoGraphDeployment whose pods are scheduled by KAI under a Run:ai project.
-  Exit: pods carry the queue, quota is enforced, the graph serves requests.
+Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on the A6000.
 
-## Phase 2: Base platform (slice: empty host to GPU-ready Kubernetes)
+- [ ] T-101 `oif` skeleton: verbs, logging, prompts, state, manifest helpers, `versions.env`
+- [ ] T-102 Host preparation: packages, swap, sysctls, containerd, NVIDIA driver from the Ubuntu archive, vfio isolation of the W6400
+- [ ] T-103 kubeadm 1.35 single node, Calico, control-plane taint removed; local-path storage; MetalLB
+- [ ] T-104 NVIDIA GPU Operator, default settings (toolkit, device plugin, GFD, DCGM exporter)
+- [ ] T-105 Run:ai open source, default install (control plane, cluster, KAI Scheduler); spike S-3 first decides the install method
+- [ ] T-106 kube-prometheus-stack; DCGM and Run:ai metrics scraped; Fleet and Scheduling dashboards (NVIDIA)
+- [ ] T-107 `oif uninstall`, `status`, `plan`, `check` for everything above
+- Checkpoint: project `team-a` with a quota of 1 NVIDIA GPU; a GPU pod runs, a second waits on quota; the dashboards show it; uninstall returns the host to the OS default.
 
-- [ ] T-010 `oif` skeleton: verbs, logging, prompts, state, manifest helpers, `versions.env` (reuse the proven helpers from the lab installers)
-- [ ] T-011 Host preparation: packages, swap, sysctls, containerd, NVIDIA driver from the Ubuntu archive, vfio isolation of excluded GPUs
-- [ ] T-012 kubeadm 1.35 single node, Calico, control-plane taint removed, maxPods
-- [ ] T-013 local-path storage, MetalLB pool
-- [ ] T-014 NVIDIA GPU Operator (host driver, toolkit, CDI, DCGM exporter)
-- [ ] T-015 AMD GPU Operator (in-kernel driver, device plugin, labeller, metrics exporter, ECC threshold for kernel 7.0)
-- [ ] T-016 `oif uninstall`, `status`, `plan`, `check`; test: install, re-run (no changes), uninstall, host back to OS default
+### P1.2 Add AMD GPUs
 
-## Phase 3: Observability (slice: see both GPUs in one dashboard)
+Slice: the same cluster also schedules the W7900, with AMD telemetry next to NVIDIA's.
 
-- [ ] T-020 kube-prometheus-stack with persistent Grafana, scrape configs and ServiceMonitors for both exporters
-- [ ] T-021 `oif:gpu_*` recording rules for both vendors; unit tests with `promtool test rules`
-- [ ] T-022 Fleet dashboard (Grafana JSON in Git, provisioned)
+- [ ] S-2 **KAI quotas for `amd.com/gpu`.** Quota of 1 for each vendor, 2 pods per vendor. Exit: one pod per vendor runs, the second stays pending with a quota reason. Fail: owner chooses between Run:ai for NVIDIA only plus a plain AMD node pool, or upstream changes.
+- [ ] T-111 AMD GPU Operator (in-kernel driver, device plugin, node labeller, ECC threshold for kernel 7.0)
+- [ ] T-112 AMD device metrics exporter scraped; `oif:gpu_*` recording rules for both vendors with `promtool` unit tests
+- [ ] T-113 Run:ai node pools `nvidia` and `amd`; quotas per vendor
+- [ ] T-114 Fleet dashboard shows both vendors on the same panels
+- Checkpoint: one project with quota 1+1; both GPUs allocatable; a third GPU pod waits on quota; uninstall still clean.
 
-## Phase 4: Orchestration (slice: quotas across vendors)
+## Project 2: Serving and a fair benchmark
 
-- [ ] T-030 Run:ai control plane and cluster (method chosen in S-3)
-- [ ] T-031 Node pools `nvidia` and `amd`; project with quota; KAI and Run:ai metrics scraped
-- [ ] T-032 Scheduling dashboard
+The goal is an apples-to-apples comparison: same model, same Dynamo version, same engine version and flags, same benchmark profile, one GPU under load at a time (ADR-011, ADR-012).
 
-## Phase 5: Serving (slices: NVIDIA end to end, then AMD end to end)
+### P2.1 Dynamo on NVIDIA with the default engines
 
-- [ ] T-040 Dynamo platform (operator, CRDs) pinned and installed
-- [ ] T-041 NVIDIA slice: Qwen3-0.6B on the A6000 via DynamoGraphDeployment under the Run:ai project; chat completion through the frontend
-- [ ] T-042 AMD image: `images/dynamo-vllm-rocm` from S-1, built and pushed to the in-cluster registry
-- [ ] T-043 AMD slice: Qwen3-0.6B on the W7900 through the same frontend
-- [ ] T-044 Serving metrics: ServiceMonitors for frontend and workers; Serving dashboard
+- [ ] T-201 Dynamo platform (operator, CRDs) pinned and installed; pods scheduled by KAI under the Run:ai project (spike S-4 first)
+- [ ] T-202 Qwen3-0.6B on the A6000 with Dynamo's default vLLM image; chat completion through the Dynamo frontend
+- [ ] T-203 Same model with Dynamo's default SGLang image
+- [ ] T-204 Same model with Dynamo's default TensorRT-LLM image (NVIDIA-only reference; check Ampere support first)
+- [ ] T-205 AIPerf runner as a Kubernetes Job; `oif bench` with profiles, temperature guard, Grafana annotations; JSON results
+- [ ] T-206 Serving dashboard (request rate, TTFT, ITL, KV cache, queue) for Dynamo frontend and workers
+- Checkpoint: a report for the A6000 with three engines.
 
-## Phase 6: Performance (slice: one comparable report)
+### P2.2 Dynamo on AMD with equivalent engines
 
-- [ ] T-050 AIPerf runner as a Kubernetes Job with profiles (concurrency sweep, fixed ISL/OSL); results to a PVC and the repo's `results/`
-- [ ] T-051 `oif bench`: one GPU at a time, temperature guard, Grafana annotations for each run
-- [ ] T-052 HTML comparison report generator (DESIGN.md rules)
+- [ ] S-1 **Dynamo on ROCm (W7900).** ROCm vLLM base plus the Dynamo runtime (no NIXL, no KVBM), aggregated, in podman. Exit: worker registers, chat completion works (streaming and not), 10 minutes of AIPerf at concurrency 8 without errors. Fail: owner chooses llm-d or plain vLLM ROCm.
+- [ ] S-5 **SGLang ROCm on gfx1100.** SGLang's ROCm builds target Instinct GPUs; prove it serves on the W7900. Fail: the AMD SGLang column is marked "not supported" in reports.
+- [ ] T-211 `images/dynamo-vllm-rocm`: the vLLM version that matches Dynamo's NVIDIA default as closely as ROCm allows
+- [ ] T-212 `images/dynamo-sglang-rocm` (if S-5 passes)
+- [ ] T-213 Qwen3-0.6B on the W7900 through the same Dynamo frontend, selected by model name
+- [ ] T-214 Same `oif bench` profiles on the W7900
+- Checkpoint: one report, A6000 vs W7900, per engine, with any version difference shown on the report.
 
-## Phase 7: Release v0.1
+### P2.3 Engine overlays: latest vLLM and SGLang on both vendors
 
-- [ ] T-060 End-to-end test on the reference host from a clean OS (TEST_PLAN.md)
-- [ ] T-061 Install guide with screenshots on the guides site
-- [ ] T-062 Tag v0.1.0
+- [ ] T-221 Overlay build: Dynamo runtime pinned, engine replaced by the latest vLLM or SGLang release; the same engine version for the CUDA and ROCm images (ADR-011)
+- [ ] T-222 Compatibility check per overlay (worker registers, metrics exported, KV events if the engine supports them); results recorded in `docs/COMPATIBILITY.md`
+- [ ] T-223 One serving profile file (`profiles/*.yaml`) applied to both vendors: dtype, max model length, max batch, prefix caching, chunked prefill, scheduler settings
+- [ ] T-224 Benchmark matrix: {A6000, W7900} x {vLLM, SGLang} x {Dynamo default, latest overlay}; 3 repeats; HTML comparison report with versions, image digests, flags, power and clocks
+- Checkpoint: a fair-comparison report the owner signs off for publication.
+
+## Project 3: Unified API and AI gateway (planning only)
+
+Not yet planned in detail. Starting points to research and decide with the owner:
+
+- One OpenAI-compatible API and gateway in front of every environment (Dynamo frontend, GAIE with the Dynamo endpoint picker, or a separate AI gateway); API keys and rate limits.
+- A self-service "pick an environment and schedule a job" API and UI on top of Run:ai projects: choose vendor, GPU, engine and profile, then deploy, serve or benchmark.
+- Placement policies: by cost, latency, availability or vendor preference.
+
+## Release
+
+- [ ] T-901 End-to-end test on the reference host from a clean OS (TEST_PLAN.md)
+- [ ] T-902 Install and comparison guides with screenshots on the guides site
+- [ ] T-903 Tag v0.1.0 after Project 1, v0.2.0 after Project 2
