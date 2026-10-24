@@ -23,7 +23,8 @@ teardown_gpu_operator() {   # chart first so the toolkit undoes its containerd a
   if kc get --raw /readyz >/dev/null 2>&1; then
     hl uninstall gpu-operator -n "$GPU_NS" --wait --timeout 5m >> "$LOG" 2>&1 || warn "helm uninstall gpu-operator did not finish"
   fi
-  rm -rf /etc/containerd/conf.d/99-nvidia.toml /usr/local/nvidia /etc/cdi/nvidia*.yaml /var/run/cdi/nvidia*.yaml 2>/dev/null || true
+  # seen on the reference host: conf.d/99-nvidia.toml, /var/run/cdi/{k8s.device-plugin,management}.nvidia.com-gpu.*
+  rm -rf /etc/containerd/conf.d/99-nvidia.toml /usr/local/nvidia /etc/cdi/*nvidia* /var/run/cdi/*nvidia* 2>/dev/null || true
   rmdir /etc/containerd/conf.d /etc/cdi /var/run/cdi 2>/dev/null || true
   ok "GPU Operator removed"
 }
@@ -51,6 +52,8 @@ stage_gpu_verify() {
   local ip m; ip=$(kc -n "$GPU_NS" get svc nvidia-dcgm-exporter -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
   [ -n "$ip" ] || die "DCGM exporter service missing"
   wait_for "DCGM metrics" 180 10 bash -c "curl -fsS -m 10 http://$ip:9400/metrics | grep -q '^DCGM_FI_DEV_GPU_TEMP'" || die "no DCGM metrics at $ip:9400"
-  m=$(curl -fsS -m 10 "http://$ip:9400/metrics" | awk '/^DCGM_FI_DEV_GPU_TEMP|^DCGM_FI_DEV_POWER_USAGE|^DCGM_FI_DEV_FB_USED/ {sub(/\{.*\}/,"",$1); printf "%s=%s ", $1, $2}')
+  # labels hold spaces (modelName="NVIDIA RTX A6000"): drop them before splitting
+  m=$(curl -fsS -m 10 "http://$ip:9400/metrics" | grep -E '^DCGM_FI_DEV_(GPU_TEMP|POWER_USAGE|FB_USED)\{' | sed -E 's/\{[^}]*\}//' \
+    | awk '{n=$1; sub(/^DCGM_FI_DEV_/,"",n); printf "%s=%s ", tolower(n), $2}')
   ok "pod saw the GPU, CUDA test passed; DCGM: $m"
 }

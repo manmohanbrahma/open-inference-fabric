@@ -8,6 +8,7 @@ Current state of the project. Update after every task.
 - Reference host: clean Ubuntu 26.04.1 after the previous NKP + NAI lab was uninstalled on 2026-10-24. A6000 on nouveau (no NVIDIA driver yet), W7900 and W6400 on amdgpu (no vfio yet).
 - T-102 installed on 2026-10-24: NVIDIA 595.91.07 (CUDA 13.2) on the A6000, W6400 on vfio-pci, swap off, containerd 2.2.2 with data in the data folder. W7900 untouched (amdgpu).
 - T-103 installed on 2026-10-24: Kubernetes 1.35.9 single node (pods 10.244.0.0/16, services 172.30.0.0/16), Calico v3.32.2, local-path (default, volumes in the data folder), MetalLB pool; smoke test passed; join tokens removed.
+- T-104 installed on 2026-10-24: GPU Operator v26.7.2 (host driver), nvidia.com/gpu 1, CUDA vectorAdd passed in a pod, DCGM exporter 23 metrics.
 
 ## Plan
 
@@ -15,11 +16,11 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 to T-103 done (guides 1 to 3). Next: T-104 NVIDIA GPU Operator.
+P1.1: T-101 to T-104 done (guides 1 to 4). Next: spike S-3 then T-105 Run:ai open source.
 
 ## Next step
 
-T-104: NVIDIA GPU Operator, default stack except the driver (host driver from T-102, so driver.enabled=false); then spike S-3 (Run:ai open source).
+Spike S-3: how the open-source Run:ai installs on single-node kubeadm (requirements: domain/TLS, ingress, database, NGC access, footprint); then T-105.
 
 ## Notes
 

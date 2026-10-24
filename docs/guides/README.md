@@ -7,7 +7,7 @@ One guide per step of the plan in [TASKS.md](../../TASKS.md). Each guide is writ
 | 1 | [Prepare the host and run the check](01-prepare-host.md) | T-101 | Tested |
 | 2 | [Host preparation: NVIDIA driver, kernel settings, container runtime, GPU isolation](02-host-preparation.md) | T-102 | Tested |
 | 3 | [Kubernetes, storage and load balancer](03-kubernetes.md) | T-103 | Tested |
-| 4 | NVIDIA GPU Operator | T-104 | Planned |
+| 4 | [NVIDIA GPU Operator](04-nvidia-gpu-operator.md) | T-104 | Tested |
 | 5 | Run:ai open source | T-105 | Planned |
 | 6 | Observability for NVIDIA | T-106 | Planned |
 | 7 | Uninstall | T-107 | Planned |
