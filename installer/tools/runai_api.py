@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Small Run:ai REST client for oif (standard library only).
+
+Credentials come from the environment (RUNAI_URL, RUNAI_USER, RUNAI_PASSWORD, RUNAI_CA); tokens and passwords are
+never printed. Commands:
+  check                                  log in and print the clusters
+  project NAME GPU_DESERVED GPU_LIMIT    create the project if missing (GPU_LIMIT -1 = no limit), print its namespace
+"""
+import json
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+URL = os.environ["RUNAI_URL"].rstrip("/")
+CTX = ssl.create_default_context(cafile=os.environ.get("RUNAI_CA") or None)
+
+
+def call(method: str, path: str, body: dict | None = None, token: str | None = None) -> tuple[int, object]:
+    req = urllib.request.Request(URL + path, method=method, data=json.dumps(body).encode() if body is not None else None)
+    req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    try:
+        with urllib.request.urlopen(req, context=CTX, timeout=60) as r:
+            raw = r.read()
+            return r.status, json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, raw.decode(errors="replace")[:300]
+
+
+def login() -> str:
+    base = {"grantType": "password", "username": os.environ["RUNAI_USER"], "password": os.environ["RUNAI_PASSWORD"]}
+    tried = []
+    for extra in ({}, {"clientID": "runai"}, {"clientID": "cli"}):
+        status, out = call("POST", "/api/v1/token", {**base, **extra})
+        if status == 200 and isinstance(out, dict) and out.get("accessToken"):
+            return out["accessToken"]
+        tried.append(f"{extra or 'no clientID'}: HTTP {status}")
+    sys.exit("login failed (" + "; ".join(tried) + ")")
+
+
+def clusters(token: str) -> list:
+    status, out = call("GET", "/api/v1/clusters", token=token)
+    if status != 200:
+        sys.exit(f"GET /api/v1/clusters: HTTP {status} {out}")
+    return out
+
+
+def project(token: str, name: str, deserved: float, limit: float) -> None:
+    status, out = call("GET", "/api/v1/org-unit/projects", token=token)
+    if status != 200:
+        sys.exit(f"GET projects: HTTP {status} {out}")
+    found = [p for p in out.get("projects", []) if p.get("name") == name]
+    if not found:
+        cl = clusters(token)
+        if not cl:
+            sys.exit("no Run:ai cluster registered")
+        gpu = {"deserved": deserved, "overQuotaWeight": 0 if limit == deserved else 2}
+        if limit >= 0:
+            gpu["limit"] = limit
+        body = {"name": name, "clusterId": cl[0]["uuid"], "resources": [{"nodePool": {"name": "default"}, "gpu": gpu}]}
+        status, out = call("POST", "/api/v1/org-unit/projects", body, token)
+        if status not in (200, 201, 202):
+            sys.exit(f"create project {name}: HTTP {status} {out}")
+        found = [out]
+    for _ in range(60):   # the namespace appears once the cluster has synced the project
+        status, out = call("GET", "/api/v1/org-unit/projects", token=token)
+        p = next((x for x in out.get("projects", []) if x.get("name") == name), {})
+        ns = (p.get("status") or {}).get("namespace")
+        if ns:
+            print(ns)
+            return
+        time.sleep(5)
+    sys.exit(f"project {name} has no namespace after 5 min")
+
+
+def main() -> None:
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    token = login()
+    if cmd == "check":
+        for c in clusters(token):
+            print(c.get("name"), c.get("uuid"), c.get("version", ""), c.get("lastLiveness", ""))
+    elif cmd == "project" and len(sys.argv) == 5:
+        project(token, sys.argv[2], float(sys.argv[3]), float(sys.argv[4]))
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

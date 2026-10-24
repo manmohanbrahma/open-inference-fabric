@@ -1,0 +1,20 @@
+# One pod asking for a whole GPU through the Run:ai scheduler, in a Run:ai project's namespace.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-quota-test
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/part-of: oif-quota-test
+spec:
+  schedulerName: runai-scheduler
+  runtimeClassName: nvidia
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: gpu
+      image: ${CUDA_SAMPLE_IMAGE}
+      command: ["sh", "-c", "nvidia-smi -L && sleep 600"]
+      resources:
+        limits:
+          nvidia.com/gpu: 1

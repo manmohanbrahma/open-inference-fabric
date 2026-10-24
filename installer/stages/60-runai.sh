@@ -149,3 +149,36 @@ stage_runai_verify() {
   echo "    sudo kubectl --kubeconfig $KCFG -n runai-backend get configmap runai-backend-tenants-manager -o jsonpath='{.data.ADMIN_USERNAME}'; echo" | tee -a "$TLOG"
   echo "    sudo kubectl --kubeconfig $KCFG -n runai-backend get secret runai-backend-gen-tenants-manager -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d; echo" | tee -a "$TLOG"
 }
+
+runai_api() {   # args...: the oif Run:ai client, logged in as the generated administrator (secrets stay in env)
+  RUNAI_URL="https://$(runai_domain)" RUNAI_CA="$PKI/ca.crt" \
+  RUNAI_USER=$(kc -n runai-backend get configmap runai-backend-tenants-manager -o jsonpath='{.data.ADMIN_USERNAME}') \
+  RUNAI_PASSWORD=$(kc -n runai-backend get secret runai-backend-gen-tenants-manager -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d) \
+    python3 "$OIF_HOME/installer/tools/runai_api.py" "$@"
+}
+pod_phase() { kc -n "$1" get pod gpu-quota-test -o jsonpath='{.status.phase}' 2>/dev/null; }
+
+register_stage runai-quota
+stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (quota 0, no over-quota) waits even on a free GPU
+  local a b reason
+  runai_api check | sed 's/^/    cluster: /' | tee -a "$TLOG"
+  a=$(runai_api project team-a 1 1) || die "project team-a: $a"
+  b=$(runai_api project team-b 0 0) || die "project team-b: $b"
+  ok "projects team-a (1 GPU, namespace $a) and team-b (0 GPU, no over-quota, namespace $b)"
+  export CUDA_SAMPLE_IMAGE
+  kc -n "$a" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1; kc -n "$b" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
+  # 1. team-b alone, with the GPU free: the quota alone must keep it waiting
+  NS=$b render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-b rejected"
+  sleep 45
+  [ "$(pod_phase "$b")" = Pending ] || die "team-b's GPU pod is '$(pod_phase "$b")' although its quota is 0 (quota not enforced)"
+  reason=$(kc -n "$b" get events --field-selector involvedObject.name=gpu-quota-test -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | tail -1)
+  ok "team-b (quota 0) waits while the GPU is free: ${reason:-pending}"
+  # 2. team-a: its quota covers one GPU, it must run
+  NS=$a render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-a rejected"
+  wait_for "team-a (quota 1) gets the GPU" 300 5 bash -c "[ \"\$(kubectl --kubeconfig $KCFG -n $a get pod gpu-quota-test -o jsonpath='{.status.phase}')\" = Running ]" \
+    || die "team-a's GPU pod did not start (kubectl -n $a describe pod gpu-quota-test)"
+  [ "$(pod_phase "$b")" = Pending ] || die "team-b's pod left Pending ($(pod_phase "$b"))"
+  ok "team-a runs on $(kc -n "$a" logs gpu-quota-test 2>/dev/null | head -1 | cut -d'(' -f1); team-b still waits"
+  kc -n "$a" delete pod gpu-quota-test --wait=true >> "$LOG" 2>&1; kc -n "$b" delete pod gpu-quota-test --wait=true >> "$LOG" 2>&1
+  ok "quota test passed; test pods removed (projects team-a and team-b kept)"
+}

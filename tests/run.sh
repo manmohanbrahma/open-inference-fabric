@@ -15,6 +15,9 @@ if [ "${1:-}" != unit ]; then
   fi
 fi
 
+echo "== python syntax"
+python3 -m py_compile installer/tools/*.py && echo "   ok" || fail=1
+
 echo "== unit tests"
 for t in tests/unit/test_*.sh; do
   if bash "$t"; then echo "   ok   $t"; else echo "   FAIL $t"; fail=1; fi
