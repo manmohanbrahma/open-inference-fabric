@@ -22,7 +22,7 @@ Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on 
 - [x] T-102 Host preparation: packages, swap, sysctls, containerd, NVIDIA driver from the Ubuntu archive, vfio isolation of the W6400
 - [x] T-103 kubeadm 1.35 single node, Calico, control-plane taint removed; local-path storage; MetalLB
 - [x] T-104 NVIDIA GPU Operator, default settings (toolkit, device plugin, GFD, DCGM exporter)
-- [ ] T-105 Run:ai open source, default install (control plane, cluster, KAI Scheduler); spike S-3 first decides the install method
+- [x] T-105 Run:ai open source, default install (control plane, cluster, KAI Scheduler); spike S-3 first decides the install method
 - [ ] T-106 kube-prometheus-stack; DCGM and Run:ai metrics scraped; Fleet and Scheduling dashboards (NVIDIA)
 - [ ] T-107 `oif uninstall`, `status`, `plan`, `check` for everything above
 - [ ] T-108 GPU fractions: Run:ai 3.0 needs NVIDIA driver r615 or later (Ubuntu's archive has 595). Options: a newer Ubuntu driver package when published, or the GPU Operator's driver container. Until then the fractioning daemons are kept off the GPU nodes (stage runai-fractions).
