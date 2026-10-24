@@ -61,7 +61,7 @@ uninstall_run() {
   replay_manifest
   safe_purge
   [ -d /run/systemd/system ] && systemctl daemon-reload
-  rm -rf "$STATE"
+  rm -rf "$STATE"; rm -f /var/log/oif-install.log
   echo "Uninstall complete. This log stays at $UNINSTALL_LOG."
   if [ "$UN_REBOOT" = yes ]; then echo "Rebooting in 10 s (as agreed)."; sleep 10; systemctl reboot
   else echo "Reboot when convenient (sudo reboot) to unload removed drivers and clear network rules."; fi

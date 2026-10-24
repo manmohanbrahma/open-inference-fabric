@@ -5,7 +5,7 @@ STATE=${OIF_STATE:-/var/lib/oif}          # settings, manifest, logs, done marke
 CONF=$STATE/settings.conf
 MANIFEST=$STATE/manifest
 DONE=$STATE/done
-LOG=$STATE/install.log
+LOG=/var/log/oif-install.log              # readable by the installing user: oif never writes secrets to it
 UNINSTALL_LOG=/var/log/oif-uninstall.log
 TLOG=$LOG                                 # where on-screen lines are copied (/dev/null when stdout is the log)
 RESUME_UNIT=/etc/systemd/system/oif-resume.service
@@ -22,7 +22,7 @@ ask()  { local v=""; [ "$INTERACTIVE" = 1 ] && read -r -p "$1${2:+ [$2]}: " v </
 ask_secret() { local v=""; [ "$INTERACTIVE" = 1 ] && { read -r -s -p "$1: " v </dev/tty; echo >/dev/tty; }; echo "$v"; }
 yesno() { local a; a=$(ask "$1 (y/n)" "${2:-y}"); [[ $a =~ ^[Yy] ]]; }
 
-state_init() { mkdir -p "$STATE" "$DONE"; chmod 700 "$STATE"; touch "$MANIFEST" "$LOG"; }
+state_init() { mkdir -p "$STATE" "$DONE"; chmod 700 "$STATE"; touch "$MANIFEST" "$LOG"; chmod 644 "$LOG"; }
 
 # settings saved by the questions, shell-quoted, mode 600 (they include secrets)
 save() { touch "$CONF"; chmod 600 "$CONF"; grep -v "^$1=" "$CONF" > "$CONF.tmp" || true

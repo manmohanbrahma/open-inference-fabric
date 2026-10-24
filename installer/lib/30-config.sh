@@ -131,7 +131,15 @@ config_collect() {   # all questions first; nothing on the host changes here
   echo "   NVIDIA GPUs: ${NVIDIA_GPUS:-all}; AMD GPUs (from 1.2): ${AMD_GPUS:-all supported}; isolated: ${ISOLATE_GPUS:-none}"
   echo "   Run:ai admin $RUNAI_ADMIN_EMAIL; NGC key $([ -n "$NGC_API_KEY" ] && echo set || echo 'not set'); HF token $([ -n "$HF_TOKEN" ] && echo set || echo 'not set')"
   echo "   Stages: ${STAGES[*]}"
+  REBOOT_OK=no
+  local b need=""; for b in "${NV_BDFS[@]}"; do [ "$(drv "$b")" = nvidia ] || need="the NVIDIA driver"; done
+  for b in ${ISOLATE_GPUS//,/ }; do [ "$(drv "$b")" = vfio-pci ] || need="${need:+$need and }GPU isolation"; done
+  if [ -n "$need" ]; then
+    echo; echo "${c_b}Reboot${c_0}: $need need one reboot, after the packages are installed."
+    yesno "   May oif reboot this host by itself at that point (the install then continues on its own)" y && REBOOT_OK=yes
+  fi
   yesno "Start with these settings" y || { echo "Nothing changed."; exit 0; }
+  save REBOOT_OK "$REBOOT_OK"
   local k; save INSTALL_USER "$INSTALL_USER"; for k in "${CONFIG_KEYS[@]}"; do save "$k" "${!k:-}"; done
   ok "settings saved to $CONF"
 }
