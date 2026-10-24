@@ -12,20 +12,21 @@ Open Inference Fabric (OIF) assembles NVIDIA's open-source AI infrastructure sof
 | Observability | Prometheus and Grafana with DCGM and AMD device metrics exporters, normalised into one vendor-neutral schema |
 | Platform | Upstream Kubernetes (kubeadm), NVIDIA GPU Operator, AMD GPU Operator |
 
-> **Status: planning (v0.1 in development).** Nothing is installable yet. Read the [PRD](docs/PRD.md) for scope and the [tasks](TASKS.md) for progress.
+> **Status: v0.1 in development.** The `oif` command line and host check work; the platform stages are being added one step at a time. Start with the [install and deployment guides](docs/guides/README.md); progress is in [TASKS.md](TASKS.md).
 
 ## Why
 
 Teams with both NVIDIA and AMD GPUs run separate stacks per vendor: different serving endpoints, different dashboards, no shared quotas, and benchmarks that cannot be compared. OIF puts both vendors behind one scheduler, one API, one benchmark tool and one set of dashboards.
 
-## Planned usage (v0.1)
+## Usage
 
 ```bash
+./oif check                                # read-only host and GPU report
 cp .env.example .env && $EDITOR .env      # addresses, tokens
-sudo ./oif check                           # read-only host and GPU report
 sudo ./oif install                         # questions first, then unattended
-sudo ./oif bench --model qwen3-0.6b        # AIPerf sweep on each GPU, HTML report
+sudo ./oif status | plan                   # progress; preview of uninstall
 sudo ./oif uninstall                       # back to the OS default
+sudo ./oif bench --model qwen3-0.6b        # (Project 2) AIPerf sweep on each GPU, HTML report
 ```
 
 ## Documentation
@@ -40,6 +41,7 @@ sudo ./oif uninstall                       # back to the OS default
 | [Decisions](docs/DECISIONS.md) | Why each architectural choice was made |
 | [Memory](docs/MEMORY.md) | Current project state |
 | [Test plan](docs/TEST_PLAN.md) | What "working" means |
+| [Install guides](docs/guides/README.md) | Step-by-step install and deployment, one guide per step |
 | [Security](docs/SECURITY.md) | Security requirements |
 | [Research](docs/RESEARCH.md) | Sources behind the decisions |
 

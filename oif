@@ -1,0 +1,86 @@
+#!/bin/bash
+# =====================================================================================================================
+# oif - Open Inference Fabric: schedule, serve, benchmark and observe LLMs on NVIDIA and AMD GPUs.
+#
+#   ./oif check                   read-only host and GPU report (no sudo needed)
+#   sudo ./oif install            asks its questions first, then runs unattended as a background job
+#   sudo ./oif status             progress and recorded host changes
+#   sudo ./oif plan               read-only preview of what uninstall would remove and keep
+#   sudo ./oif uninstall [--yes]  reverse every host change oif made, back to the OS default
+#   ./oif version | help
+#
+# Settings come from .env next to this script (see .env.example) or from --env FILE; missing ones are asked.
+# Every host change is recorded in /var/lib/oif/manifest; uninstall reverses exactly those changes.
+# =====================================================================================================================
+set -eEuo pipefail
+umask 022
+SELF=$(readlink -f "$0"); OIF_HOME=$(dirname "$SELF")
+
+# shellcheck source=versions.env
+. "$OIF_HOME/versions.env"
+for f in "$OIF_HOME"/installer/lib/*.sh "$OIF_HOME"/installer/stages/*.sh; do
+  # shellcheck source=/dev/null
+  . "$f"
+done
+trap 'rc=$?; [ "$BASH_SUBSHELL" = 0 ] && echo "${c_r}ERROR: unexpected failure (exit $rc) at ${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND - run oif install again to continue from this stage${c_0}" | tee -a "$TLOG" >&2' ERR
+
+main() {
+  local verb=${1:-help}; shift || true
+  ENV_FILE=$OIF_HOME/.env
+  local args=()
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --env) [ $# -ge 2 ] || usage_error "--env needs a file"; ENV_FILE=$2; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  case $verb in
+    help|-h|--help) usage; return 0 ;;
+    version|--version) echo "oif $OIF_VERSION"; return 0 ;;
+    check|plan|status|install|uninstall|_worker|_uninstall-worker|_resume) ;;
+    *) usage_error "unknown command '$verb'" ;;
+  esac
+  [ "$(id -u)" = 0 ] || [ "$verb" = check ] || { echo "run with sudo: sudo $0 $verb"; exit 2; }
+  case $verb in
+    check|plan|status|uninstall) TLOG=/dev/null ;;
+    *) state_init ;;
+  esac
+  config_load_saved
+  case $verb in
+    check)     host_check ;;
+    status)    status ;;
+    plan)      plan ;;
+    uninstall) uninstall "${args[@]+"${args[@]}"}" ;;
+    install)   install_interactive ;;
+    _worker|_resume) INTERACTIVE=0; exec >>"$LOG" 2>&1; TLOG=/dev/null; install_run ;;
+    _uninstall-worker) INTERACTIVE=0; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
+  esac
+}
+
+usage() { sed -n '3,13p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage_error() { echo "oif: $*" >&2; echo "run '$0 help' for usage" >&2; exit 2; }
+
+install_interactive() {
+  exec 9>"$STATE/lock"; flock -n 9 || die "another oif run is active (follow it: sudo tail -f $LOG)"
+  if [ -f "$CONF" ]; then echo "Using the settings saved by the first run ($CONF); finished stages are skipped."
+  else config_collect; fi
+  exec 9>&-
+  systemctl reset-failed oif-install >/dev/null 2>&1 || true
+  local from=$(( $(wc -l < "$LOG") + 1 ))
+  systemd-run -q --unit oif-install --collect "$SELF" _worker || die "could not start the installation job"
+  echo; echo "Installation running as a background job (survives a dropped SSH session). Follow it any time with:"
+  echo "   sudo tail -f $LOG        (progress: sudo $SELF status)"
+  follow_job oif-install "$LOG" "$from"
+}
+
+install_run() {
+  exec 9>"$STATE/lock"; flock -n 9 || die "another oif run is active"
+  log "oif $OIF_VERSION install (state in $STATE)"
+  [ -f "$CONF" ] || die "no saved settings: run 'sudo $SELF install' interactively first"
+  config_load_saved
+  run_stages
+  rm -f "$RESUME_UNIT"; systemctl daemon-reload
+  log "install finished"
+}
+
+main "$@"

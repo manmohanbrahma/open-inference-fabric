@@ -18,7 +18,7 @@ The work is split into three projects (ADR-010). Each builds on the one before, 
 
 Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on the A6000.
 
-- [ ] T-101 `oif` skeleton: verbs, logging, prompts, state, manifest helpers, `versions.env`
+- [x] T-101 `oif` skeleton: verbs, logging, prompts, state, manifest helpers, `versions.env`
 - [ ] T-102 Host preparation: packages, swap, sysctls, containerd, NVIDIA driver from the Ubuntu archive, vfio isolation of the W6400
 - [ ] T-103 kubeadm 1.35 single node, Calico, control-plane taint removed; local-path storage; MetalLB
 - [ ] T-104 NVIDIA GPU Operator, default settings (toolkit, device plugin, GFD, DCGM exporter)

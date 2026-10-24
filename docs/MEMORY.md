@@ -14,11 +14,17 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 (`oif` skeleton) and spike S-3, plan awaiting owner approval.
+P1.1: T-101 done (`oif` command line, settings, manifest and uninstall engine, host check, unit tests, guide 1). Next: T-102 host preparation.
 
 ## Next step
 
-P1.1, starting with T-101 (`oif` skeleton) and spike S-3 (Run:ai open source on single-node kubeadm).
+T-102 host preparation (NVIDIA driver from the Ubuntu archive, swap, kernel settings, containerd, vfio for the W6400; one reboot asked first), then T-103, T-104 and spike S-3.
+
+## Notes
+
+- The reference host has no `curl` or `git` out of the box; oif uses Python and `wget`.
+- `sudo` on the reference host needs a password: the owner runs `sudo ./oif ...`; read-only `./oif check` needs no sudo.
+- Every step ships with a guide in `docs/guides/` (owner's rule, 2026-10-24).
 
 ## Known issues and risks
 

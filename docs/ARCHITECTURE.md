@@ -61,7 +61,9 @@ KAI handles NVIDIA GPUs natively. Whether it applies queue quotas to `amd.com/gp
 ```text
 open-inference-fabric/
 ├── oif                     # CLI entry point (bash): install, uninstall, status, bench, ...
-├── installer/              # stage scripts, host-change manifest, uninstall
+├── installer/
+│   ├── lib/                # output, settings, host facts, packages, reboots, manifest replay
+│   └── stages/             # NN-name.sh: one install stage each, registered in order
 ├── versions.env            # every pinned version and image tag
 ├── platform/               # Helm values and manifests per component
 │   ├── kubernetes/  gpu-nvidia/  gpu-amd/  runai/  dynamo/  observability/
@@ -74,6 +76,7 @@ open-inference-fabric/
 │   └── dashboards/         # Fleet, Serving, Scheduling (Grafana JSON)
 ├── tests/                  # shellcheck, unit tests, smoke and e2e checks
 ├── docs/                   # PRD, ARCHITECTURE, DESIGN, RULES, DECISIONS, ...
+│   └── guides/             # install and deployment guide per step
 ├── TASKS.md  CLAUDE.md  README.md  .env.example
 ```
 

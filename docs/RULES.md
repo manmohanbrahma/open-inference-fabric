@@ -45,4 +45,5 @@ These rules apply to every change, by a person or by an AI assistant.
 
 ## After each task
 
+- Write or update the install and deployment guide for the step in `docs/guides/` (layout in `docs/guides/README.md`), from a real run on the reference host: commands, expected output, checks, host changes, troubleshooting. A step is not done without its guide.
 - Update TASKS.md (status), MEMORY.md (current state, next step) and DECISIONS.md (if a decision was made).

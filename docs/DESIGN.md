@@ -41,4 +41,6 @@ Conventions:
 
 ## Documentation
 
+- Every step of TASKS.md ships with an install and deployment guide in `docs/guides/`, written from a tested run.
+
 - Guides published alongside the other lab guides, in the same "runbook" style: numbered steps, copy buttons, checklists, screenshots of real runs with addresses replaced by placeholders.
