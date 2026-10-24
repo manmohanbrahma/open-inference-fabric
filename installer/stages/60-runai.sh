@@ -244,14 +244,27 @@ runai_patch_use() {   # component stock|patched: point Run:ai at the image and w
       fi ;;
     frontend)       # plain Helm deployments: a later helm upgrade of the Run:ai charts puts the stock image back
       ns=runai-backend deploy=runai-backend-frontend
-      kc -n "$ns" set image "deploy/$deploy" "frontend=$reg/$comp:$tag" >> "$LOG" || die "cannot set the $comp image" ;;
+      runai_patch_set_image "$ns" "$deploy" frontend "$reg/$comp:$tag" ;;
     go-operator)
       deploy=runai-operator
-      kc -n "$ns" set image "deploy/$deploy" "runai-go-operator=$reg/$comp:$tag" >> "$LOG" || die "cannot set the $comp image" ;;
+      runai_patch_set_image "$ns" "$deploy" runai-go-operator "$reg/$comp:$tag" ;;
   esac
   wait_for "Run:ai $comp runs the $2 image" 300 10 bash -c \
     "kubectl --kubeconfig $KCFG -n $ns get deploy $deploy -o jsonpath='{.spec.template.spec.containers[0].image}' | grep -qxF '$reg/$comp:$tag' && kubectl --kubeconfig $KCFG -n $ns rollout status deploy/$deploy --timeout=10s" \
     || die "$comp did not roll out the $2 image (kubectl -n $ns describe deploy $deploy)"
+}
+runai_patch_set_image() {   # namespace deployment container image: set the image; a local image is never pulled
+  local ns=$1 dep=$2 ctr=$3 img=$4 policy stock
+  # remember the stock pull policy once, so switching back to the stock image restores it
+  stock=$(kc -n "$ns" get deploy "$dep" -o jsonpath='{.metadata.annotations.oif\.ai/stock-pull-policy}')
+  if [ -z "$stock" ]; then
+    stock=$(kc -n "$ns" get deploy "$dep" -o jsonpath="{.spec.template.spec.containers[?(@.name=='$ctr')].imagePullPolicy}")
+    kc -n "$ns" annotate deploy "$dep" "oif.ai/stock-pull-policy=${stock:-IfNotPresent}" >> "$LOG"
+  fi
+  policy=IfNotPresent; [[ $img == "$RUNAI_STOCK_REGISTRY"/* ]] && policy=${stock:-IfNotPresent}
+  kc -n "$ns" patch deploy "$dep" --type strategic \
+    -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"$ctr\",\"image\":\"$img\",\"imagePullPolicy\":\"$policy\"}]}}}}" >> "$LOG" \
+    || die "cannot set the image of $ns/$dep"
 }
 runai_nodes_total_gpus_ok() {   # every node's GPU count in Run:ai equals its nvidia.com/gpu + amd.com/gpu
   local want got; want=$(kc get nodes -o json | python3 -c 'import json,sys; print(sum(int(n["status"]["allocatable"].get(r,0)) for n in json.load(sys.stdin)["items"] for r in ("nvidia.com/gpu","amd.com/gpu")))')
