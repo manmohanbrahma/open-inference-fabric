@@ -1,0 +1,24 @@
+# Grafana through HAProxy on the Run:ai domain's wildcard certificate (grafana.<runai-domain>; the oif CA signs it).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oif-grafana
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: oif
+spec:
+  ingressClassName: haproxy
+  tls:
+    - hosts: ["${GRAFANA_HOST}"]
+      secretName: oif-tls
+  rules:
+    - host: ${GRAFANA_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kps-grafana
+                port:
+                  number: 80

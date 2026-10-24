@@ -8,6 +8,7 @@ kubeconfig*
 results/raw/
 *.log
 .state/
+tests/.cache/
 
 # tooling
 __pycache__/

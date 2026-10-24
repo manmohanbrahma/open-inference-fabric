@@ -1,0 +1,161 @@
+# promtool unit tests for oif-gpu.rules.yaml (tests/unit/test_rules.sh). Input series copy the labels the DCGM
+# exporter, the AMD device metrics exporter, kube-state-metrics and Run:ai publish on the reference host.
+rule_files:
+  - oif-gpu.rules.yaml
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'DCGM_FI_DEV_GPU_UTIL{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '87x4'
+      - series: 'DCGM_FI_DEV_FB_USED{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '1024x4'
+      - series: 'DCGM_FI_DEV_FB_FREE{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '47602x4'
+      - series: 'DCGM_FI_DEV_FB_RESERVED{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '512x4'
+      - series: 'DCGM_FI_DEV_POWER_USAGE{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '250.5x4'
+      - series: 'DCGM_FI_DEV_GPU_TEMP{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '71x4'
+      - series: 'DCGM_FI_DEV_SM_CLOCK{gpu="0", modelName="NVIDIA RTX A6000", hostname="node1", UUID="GPU-x", pod="dcgm-1"}'
+        values: '1800x4'
+      - series: 'gpu_gfx_activity{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '42x4'
+      - series: 'gpu_used_vram{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '2048x4'
+      - series: 'gpu_total_vram{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '46064x4'
+      - series: 'gpu_average_package_power{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '180x4'
+      - series: 'gpu_edge_temperature{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '55x4'
+      - series: 'gpu_junction_temperature{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", gpu_partition_id="0"}'
+        values: '68x4'
+      - series: 'gpu_clock{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", clock_type="system", clock_index="0"}'
+        values: '2400x4'
+      - series: 'gpu_clock{gpu_id="0", card_model="AMD Radeon Pro W7900", hostname="node1", clock_type="memory", clock_index="8"}'
+        values: '1250x4'
+      - series: 'kube_node_status_allocatable{node="node1", resource="nvidia_com_gpu", unit="integer"}'
+        values: '1x4'
+      - series: 'kube_node_status_allocatable{node="node1", resource="amd_com_gpu", unit="integer"}'
+        values: '1x4'
+      - series: 'kube_node_status_allocatable{node="node1", resource="cpu", unit="core"}'
+        values: '192x4'
+      - series: 'kube_pod_container_resource_requests{namespace="runai-team-c", pod="nv", container="gpu", node="node1", resource="nvidia_com_gpu", unit="integer"}'
+        values: '1x4'
+      - series: 'kube_pod_container_resource_requests{namespace="runai-team-c", pod="amd", container="gpu", node="node1", resource="amd_com_gpu", unit="integer"}'
+        values: '1x4'
+      - series: 'kube_pod_container_resource_requests{namespace="runai-team-b", pod="wait", container="gpu", resource="amd_com_gpu", unit="integer"}'
+        values: '1x4'
+      - series: 'kube_pod_container_resource_requests{namespace="runai-team-c", pod="nv", container="gpu", node="node1", resource="cpu", unit="core"}'
+        values: '0.5x4'
+      - series: 'kube_pod_status_phase{namespace="runai-team-c", pod="nv", phase="Running"}'
+        values: '1x4'
+      - series: 'kube_pod_status_phase{namespace="runai-team-c", pod="nv", phase="Pending"}'
+        values: '0x4'
+      - series: 'kube_pod_status_phase{namespace="runai-team-c", pod="amd", phase="Running"}'
+        values: '1x4'
+      - series: 'kube_pod_status_phase{namespace="runai-team-b", pod="wait", phase="Pending"}'
+        values: '1x4'
+      - series: 'kube_resourcequota{namespace="runai-team-c", resource="requests.nvidia.com/gpu", resourcequota="oif-gpu-vendor", type="hard"}'
+        values: '1x4'
+      - series: 'kube_resourcequota{namespace="runai-team-c", resource="requests.amd.com/gpu", resourcequota="oif-gpu-vendor", type="used"}'
+        values: '1x4'
+      - series: 'runai_deserved_gpu_count_per_queue{department="default", nodepool="default", project="team-c", queue_name="team-c"}'
+        values: '2x4'
+      - series: 'runai_deserved_gpu_count_per_queue{department="default", nodepool="default", queue_name="q-4500000"}'
+        values: '-1x4'
+      - series: 'instance:node_cpu_utilisation:rate5m{instance="192.0.2.10:9100", namespace="monitoring", pod="node-exporter-1"}'
+        values: '0.25x4'
+      - series: 'instance:node_memory_utilisation:ratio{instance="192.0.2.10:9100", namespace="monitoring", pod="node-exporter-1"}'
+        values: '0.1x4'
+      - series: 'node_namespace_pod:kube_pod_info:{namespace="monitoring", pod="node-exporter-1", node="node1"}'
+        values: '1x4'
+    alert_rule_test: []
+    promql_expr_test:
+      - expr: oif:gpu_util_ratio
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_util_ratio{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 0.87
+          - labels: 'oif:gpu_util_ratio{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 0.42
+      - expr: oif:gpu_mem_used_bytes
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_mem_used_bytes{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 1073741824
+          - labels: 'oif:gpu_mem_used_bytes{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 2147483648
+      - expr: oif:gpu_mem_total_bytes
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_mem_total_bytes{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 51524927488
+          - labels: 'oif:gpu_mem_total_bytes{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 48301604864
+      - expr: oif:gpu_power_watts
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_power_watts{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 250.5
+          - labels: 'oif:gpu_power_watts{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 180
+      - expr: oif:gpu_temp_celsius
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_temp_celsius{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 71
+          - labels: 'oif:gpu_temp_celsius{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 55
+      - expr: oif:gpu_temp_junction_celsius
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_temp_junction_celsius{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 68
+      - expr: oif:gpu_sm_clock_hz
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_sm_clock_hz{vendor="nvidia", model="NVIDIA RTX A6000", gpu="0", node="node1"}'
+            value: 1.8e9
+          - labels: 'oif:gpu_sm_clock_hz{vendor="amd", model="AMD Radeon Pro W7900", gpu="0", node="node1"}'
+            value: 2.4e9
+      - expr: oif:node_cpu_util_ratio
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:node_cpu_util_ratio{node="node1"}'
+            value: 0.25
+      - expr: oif:node_mem_util_ratio
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:node_mem_util_ratio{node="node1"}'
+            value: 0.1
+      - expr: oif:gpu_allocatable
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_allocatable{vendor="nvidia", node="node1"}'
+            value: 1
+          - labels: 'oif:gpu_allocatable{vendor="amd", node="node1"}'
+            value: 1
+      - expr: oif:gpu_requested
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_requested{vendor="nvidia", namespace="runai-team-c", phase="Running"}'
+            value: 1
+          - labels: 'oif:gpu_requested{vendor="amd", namespace="runai-team-c", phase="Running"}'
+            value: 1
+          - labels: 'oif:gpu_requested{vendor="amd", namespace="runai-team-b", phase="Pending"}'
+            value: 1
+      - expr: oif:gpu_quota
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:gpu_quota{vendor="nvidia", namespace="runai-team-c", type="hard"}'
+            value: 1
+          - labels: 'oif:gpu_quota{vendor="amd", namespace="runai-team-c", type="used"}'
+            value: 1
+      - expr: oif:project_gpu_deserved
+        eval_time: 1m
+        exp_samples:
+          - labels: 'oif:project_gpu_deserved{project="team-c"}'
+            value: 2

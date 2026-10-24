@@ -1,0 +1,123 @@
+# oif:* recording rules (T-112): both GPU vendors on one schema, so one dashboard panel shows both.
+# GPU series carry {vendor, model, gpu, node}; units are in the name (ratio 0-1, bytes, watts, celsius, hz).
+# NVIDIA from the DCGM exporter (memory in MiB, clocks in MHz); AMD from the AMD device metrics exporter (VRAM in MiB, clocks in MHz).
+# Scheduling series come from kube-state-metrics (both vendors) and Run:ai's queue metrics (Run:ai counts NVIDIA GPUs only).
+# Plain Prometheus rule file: tested with promtool (oif-gpu.test.yaml); the installer wraps it in a PrometheusRule.
+groups:
+  - name: oif-gpu
+    interval: 15s
+    rules:
+      - record: oif:gpu_util_ratio
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            DCGM_FI_DEV_GPU_UTIL / 100,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_gfx_activity / 100,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      - record: oif:gpu_mem_used_bytes
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            DCGM_FI_DEV_FB_USED * 1048576,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_used_vram * 1048576,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      - record: oif:gpu_mem_total_bytes
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE + DCGM_FI_DEV_FB_RESERVED) * 1048576,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_total_vram * 1048576,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      - record: oif:gpu_power_watts
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            DCGM_FI_DEV_POWER_USAGE,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_average_package_power,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      # NVIDIA reports one GPU temperature; AMD's closest equivalent is the edge sensor
+      - record: oif:gpu_temp_celsius
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            DCGM_FI_DEV_GPU_TEMP,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_edge_temperature,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      # AMD only: the hottest point of the die, which drives AMD's throttling
+      - record: oif:gpu_temp_junction_celsius
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_junction_temperature,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+      # shader clock: SM clock on NVIDIA, the "system" (graphics) clock on AMD
+      - record: oif:gpu_sm_clock_hz
+        expr: |
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(
+            DCGM_FI_DEV_SM_CLOCK * 1e6,
+            "vendor", "nvidia", "", ""), "model", "$1", "modelName", "(.*)"), "node", "$1", "hostname", "(.*)"))
+          or
+          max by (vendor, model, gpu, node) (label_replace(label_replace(label_replace(label_replace(
+            gpu_clock{clock_type="system"} * 1e6,
+            "vendor", "amd", "", ""), "model", "$1", "card_model", "(.*)"), "node", "$1", "hostname", "(.*)"), "gpu", "$1", "gpu_id", "(.*)"))
+
+  - name: oif-node
+    interval: 30s
+    rules:
+      # node-exporter labels series by address; kube-prometheus-stack's pod-to-node rule gives the node name
+      - record: oif:node_cpu_util_ratio
+        expr: |
+          max by (node) (instance:node_cpu_utilisation:rate5m
+            * on (namespace, pod) group_left (node) topk by (namespace, pod) (1, node_namespace_pod:kube_pod_info:))
+      - record: oif:node_mem_util_ratio
+        expr: |
+          max by (node) (instance:node_memory_utilisation:ratio
+            * on (namespace, pod) group_left (node) topk by (namespace, pod) (1, node_namespace_pod:kube_pod_info:))
+
+  - name: oif-scheduling
+    interval: 30s
+    rules:
+      # GPUs each node offers to Kubernetes, per vendor
+      - record: oif:gpu_allocatable
+        expr: |
+          max by (vendor, node) (label_replace(
+            kube_node_status_allocatable{resource=~"(nvidia|amd)_com_gpu"},
+            "vendor", "$1", "resource", "(nvidia|amd)_com_gpu"))
+
+      # GPUs requested by pods, per vendor, namespace and phase (Running = in use, Pending = waiting)
+      - record: oif:gpu_requested
+        expr: |
+          sum by (vendor, namespace, phase) (label_replace(
+            kube_pod_container_resource_requests{resource=~"(nvidia|amd)_com_gpu"},
+            "vendor", "$1", "resource", "(nvidia|amd)_com_gpu")
+            * on (namespace, pod) group_left (phase) (kube_pod_status_phase{phase=~"Running|Pending"} == 1))
+
+      # per-vendor caps from the oif-gpu-vendor ResourceQuota (ADR-015); type is hard or used
+      - record: oif:gpu_quota
+        expr: |
+          max by (vendor, namespace, type) (label_replace(
+            kube_resourcequota{resource=~"requests\\.(nvidia|amd)\\.com/gpu"},
+            "vendor", "$1", "resource", "requests\\.(nvidia|amd)\\.com/gpu"))
+
+      # Run:ai projects: deserved (quota), allocated and pending GPUs; Run:ai counts NVIDIA GPUs only
+      - record: oif:project_gpu_deserved
+        expr: max by (project) (runai_deserved_gpu_count_per_queue{project!=""})
+      - record: oif:project_gpu_allocated
+        expr: max by (project) (runai_allocated_gpu_count_per_queue{project!=""})
+      - record: oif:project_gpu_pending
+        expr: max by (project) (runai_pending_requested_gpu_count_per_queue{project!=""})
