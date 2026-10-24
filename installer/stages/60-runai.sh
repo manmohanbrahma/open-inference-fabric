@@ -179,19 +179,23 @@ stage_runai_admin() {   # the owner's administrator account from the settings; t
 }
 
 # T-115: oif's patches to Run:ai (patches/runai/): cluster-sync counts AMD GPUs on nodes that also have NVIDIA GPUs,
-# the web UI shows the AMD logo for ROCm images. Each patched component is built from the tagged source in a Job,
+# the web UI shows the AMD logo for ROCm images, the operator reports fractions unavailable when no node runs them.
+# Each patched component is built from the tagged source in a Job,
 # layered onto its stock image, loaded into containerd and switched on. RUNAI_PATCHES=none puts the stock images back.
 # The stage reruns when a patch, a build script, a pinned version or RUNAI_PATCHES changes.
 runai_patch_rev() { cat "$OIF_HOME"/patches/runai/build-*.sh "$OIF_HOME"/patches/runai/"$RUNAI_VERSION"/*.patch 2>/dev/null \
   | { cat; echo "$GO_BUILD_IMAGE $NODE_BUILD_IMAGE $CRANE_VERSION $CRANE_SHA256 $RUNAI_SOURCE_SHA256 ${RUNAI_PATCHES:-}"; } | sha256sum | cut -c1-12; }
 RUNAI_STOCK_REGISTRY=nvcr.io/nvidia/runai-oss
 RUNAI_PATCH_REGISTRY=oif.local/runai-oss
-# component  build image (variable)  patch file pattern
-RUNAI_PATCH_COMPONENTS=("cluster-sync GO_BUILD_IMAGE cluster-sync" "frontend NODE_BUILD_IMAGE frontend")
+# component  build image (variable)  build script  source folder  binary  test packages ("-" = not used)
+RUNAI_PATCH_COMPONENTS=(
+  "cluster-sync GO_BUILD_IMAGE build-go.sh runai-cluster/cluster/cluster-sync cluster-sync ./pkg/handlers/parsers/"
+  "go-operator GO_BUILD_IMAGE build-go.sh runai-cluster/cluster/go-operator go-operator ./pkg/controller-utils/"
+  "frontend NODE_BUILD_IMAGE build-frontend.sh - - -")
 
 register_stage runai-patches runai_patch_rev
 stage_runai_patches() {
-  local c comp bimg pat
+  local c comp bimg script src bin tests
   if [ "${RUNAI_PATCHES:-}" = none ]; then
     for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do runai_patch_use "${c%% *}" stock; done
     ok "Run:ai runs its stock images (RUNAI_PATCHES=none)"; return 0
@@ -201,16 +205,16 @@ stage_runai_patches() {
     --dry-run=client -o yaml | kc apply -f - >> "$LOG"
   kc -n oif-build create configmap runai-patches --from-file="$OIF_HOME/patches/runai/$RUNAI_VERSION/" --dry-run=client -o yaml \
     | kc apply -f - >> "$LOG"
-  for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do read -r comp bimg pat <<< "$c"
-    if ! ls "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$pat"*.patch >/dev/null 2>&1; then
+  for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do read -r comp bimg script src bin tests <<< "$c"
+    if ! ls "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$comp"*.patch >/dev/null 2>&1; then
       runai_patch_use "$comp" stock; continue; fi
-    runai_patch_build "$comp" "${!bimg}"
+    BUILD_SCRIPT=$script SRC_DIR=$src BINARY=$bin TEST_PKGS=$tests runai_patch_build "$comp" "${!bimg}"
     runai_patch_use "$comp" patched
   done
   wait_for "Run:ai counts every GPU of the node" 300 15 runai_nodes_total_gpus_ok || warn "Run:ai still counts fewer GPUs than the node offers"
   runai_api nodes | sed 's/^/    /' | tee -a "$TLOG"
 }
-runai_patch_build() {   # component build-image: Job -> image tarball -> containerd
+runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY TEST_PKGS): Job -> image tarball -> containerd
   local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1
   mkdir -p "$out"; rm -f "$out/$comp.tar"
   kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
@@ -238,9 +242,12 @@ runai_patch_use() {   # component stock|patched: point Run:ai at the image and w
       else
         kc -n runai patch runaiconfig runai --type json -p '[{"op":"remove","path":"/spec/cluster-sync/image"}]' >> "$LOG" 2>&1 || true
       fi ;;
-    frontend)       # a plain Helm deployment of the control plane; a later helm upgrade of runai-backend puts stock back
+    frontend)       # plain Helm deployments: a later helm upgrade of the Run:ai charts puts the stock image back
       ns=runai-backend deploy=runai-backend-frontend
       kc -n "$ns" set image "deploy/$deploy" "frontend=$reg/$comp:$tag" >> "$LOG" || die "cannot set the $comp image" ;;
+    go-operator)
+      deploy=runai-operator
+      kc -n "$ns" set image "deploy/$deploy" "runai-go-operator=$reg/$comp:$tag" >> "$LOG" || die "cannot set the $comp image" ;;
   esac
   wait_for "Run:ai $comp runs the $2 image" 300 10 bash -c \
     "kubectl --kubeconfig $KCFG -n $ns get deploy $deploy -o jsonpath='{.spec.template.spec.containers[0].image}' | grep -qxF '$reg/$comp:$tag' && kubectl --kubeconfig $KCFG -n $ns rollout status deploy/$deploy --timeout=10s" \

@@ -16,8 +16,12 @@ spec:
       containers:
         - name: build
           image: ${BUILD_IMAGE}
-          command: ["sh", "/build/build-${COMPONENT}.sh"]
+          command: ["sh", "/build/${BUILD_SCRIPT}"]
           env:
+            - {name: COMPONENT, value: "${COMPONENT}"}
+            - {name: SRC_DIR, value: "${SRC_DIR}"}
+            - {name: BINARY, value: "${BINARY}"}
+            - {name: TEST_PKGS, value: "${TEST_PKGS}"}
             - {name: RUNAI_VERSION, value: "${RUNAI_VERSION}"}
             - {name: RUNAI_SOURCE_SHA256, value: "${RUNAI_SOURCE_SHA256}"}
             - {name: CRANE_VERSION, value: "${CRANE_VERSION}"}
