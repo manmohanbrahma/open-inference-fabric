@@ -68,14 +68,35 @@ stage_k8s_tokens() {   # one node: nothing joins it, so no join tokens or upload
 }
 
 teardown_kubernetes() {   # everything kubeadm and the network plugin put on the host
+  # Stop the workloads while the API server still runs: Calico needs it to release pod networks, and GPU pods need the
+  # NVIDIA runtime (removed later, with containerd). Left to kubeadm reset, both failed and the reset took 5.5 min.
+  if command -v crictl >/dev/null && [ -S /run/containerd/containerd.sock ]; then
+    systemctl stop kubelet >/dev/null 2>&1 || true
+    local ids; ids=$(crictl pods -o json 2>/dev/null | python3 -c '
+import json, sys
+static = ("etcd-", "kube-apiserver-", "kube-controller-manager-", "kube-scheduler-")
+for p in json.load(sys.stdin).get("items", []):
+    m = p["metadata"]
+    if not (m["namespace"] == "kube-system" and m["name"].startswith(static)):
+        print(p["id"])' | xargs)
+    if [ -n "$ids" ]; then
+      # shellcheck disable=SC2086
+      timeout 300 crictl stopp $ids >> "$LOG" 2>&1 || warn "some pods did not stop in time"
+      # shellcheck disable=SC2086
+      timeout 120 crictl rmp $ids >> "$LOG" 2>&1 || true
+      ok "workload pods stopped and removed ($(wc -w <<< "$ids"))"
+    fi
+  fi
   kubeadm reset -f --cri-socket unix:///run/containerd/containerd.sock >> "$LOG" 2>&1 || true
   systemctl disable --now kubelet >/dev/null 2>&1 || true
   local t; findmnt -rn -o TARGET | grep -E '^/(var/lib/kubelet|run/netns|run/calico|var/lib/calico)(/|$)' | sort -r \
     | while read -r t; do umount "$t" 2>/dev/null || umount -l "$t" 2>/dev/null || true; done
   rm -rf --one-file-system /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d /var/lib/cni /var/lib/calico \
     /run/calico /var/log/calico /var/run/nodeagent /var/log/pods /var/log/containers 2>>"$LOG" || true
-  local l; for l in $(ip -o link show | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(cali|vxlan\.calico|tunl0|kube-ipvs0)'); do
-    ip link delete "$l" 2>/dev/null || true; done
+  local l; for l in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(cali|vxlan\.calico|tunl0|kube-ipvs0)'); do
+    ip link delete "$l" >/dev/null 2>&1 || true; done
+  # Calico copies its CNI plugins next to the kubernetes-cni package's; left there, dpkg cannot remove /opt/cni
+  rm -f /opt/cni/bin/calico /opt/cni/bin/calico-ipam /opt/cni/bin/flannel 2>/dev/null || true
   local ipt; for ipt in iptables ip6tables; do   # drop only Kubernetes' and Calico's rules, keep everything else
     command -v "$ipt-save" >/dev/null || continue
     "$ipt-save" | grep -vE 'KUBE-|cali-|cali:|CNI-' | "$ipt-restore" 2>>"$LOG" || warn "$ipt rules not cleaned (a reboot clears them)"

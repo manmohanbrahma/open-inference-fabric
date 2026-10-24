@@ -28,5 +28,6 @@ teardown_containerd() {   # stop containers and detach their mounts before the d
   pkill -f containerd-shim 2>/dev/null || true; sleep 2
   local t; findmnt -rn -o TARGET | grep -E "^(/run/containerd|/var/lib/containerd|${INSTALL_DIR:-/nonexistent}/containerd)(/|$)" | sort -r \
     | while read -r t; do umount "$t" 2>/dev/null || umount -l "$t" 2>/dev/null || true; done
+  if declare -F nvidia_runtime_leftovers >/dev/null; then nvidia_runtime_leftovers; fi
   ok "containerd stopped"
 }

@@ -19,14 +19,17 @@ stage_gpu_operator() {
     || { kc -n "$GPU_NS" get pods | grep -vE 'Running|Completed' | tee -a "$TLOG"; die "GPU Operator not ready (kubectl -n $GPU_NS get pods)"; }
 }
 
-teardown_gpu_operator() {   # chart first so the toolkit undoes its containerd and CDI changes; then any leftovers
+teardown_gpu_operator() {   # chart first so the toolkit undoes its containerd and CDI changes
   if kc get --raw /readyz >/dev/null 2>&1; then
     hl uninstall gpu-operator -n "$GPU_NS" --wait --timeout 5m >> "$LOG" 2>&1 || warn "helm uninstall gpu-operator did not finish"
   fi
+  ok "GPU Operator removed"   # its runtime files go in nvidia_runtime_leftovers, after Kubernetes has stopped every container
+}
+
+nvidia_runtime_leftovers() {   # called by teardown_containerd: GPU pods need nvidia-container-runtime until they are stopped
   # seen on the reference host: conf.d/99-nvidia.toml, /var/run/cdi/{k8s.device-plugin,management}.nvidia.com-gpu.*
   rm -rf /etc/containerd/conf.d/99-nvidia.toml /usr/local/nvidia /etc/cdi/*nvidia* /var/run/cdi/*nvidia* 2>/dev/null || true
   rmdir /etc/containerd/conf.d /etc/cdi /var/run/cdi 2>/dev/null || true
-  ok "GPU Operator removed"
 }
 
 register_stage gpu-verify GPU_OPERATOR_VERSION

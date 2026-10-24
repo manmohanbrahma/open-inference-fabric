@@ -44,9 +44,16 @@ stage_amd_gpu_operator() {
     || { kc -n "$AMD_NS" get pods | grep -vE 'Running|Completed' | tee -a "$TLOG"; die "AMD GPU Operator pods not running"; }
 }
 
-teardown_amd_gpu_operator() {   # chart first (its pre-delete hook removes the DeviceConfig and the operands); then host leftovers
+teardown_amd_gpu_operator() {   # DeviceConfig, then the chart, then host leftovers
   if kc get --raw /readyz >/dev/null 2>&1; then
-    hl uninstall amd-gpu-operator -n "$AMD_NS" --wait --timeout 5m >> "$LOG" 2>&1 || warn "helm uninstall amd-gpu-operator did not finish"
+    # The chart's pre-delete hook deletes the DeviceConfig and waits for its finalizer; on the reference host (KMM off) it
+    # never finished and helm timed out after 5 min. Delete it here with a limit, drop a stuck finalizer, skip the hook.
+    if ! kc delete deviceconfigs.amd.com --all -n "$AMD_NS" --timeout=90s >> "$LOG" 2>&1; then
+      warn "DeviceConfig deletion stuck: removing its finalizer"
+      local dc; for dc in $(kc -n "$AMD_NS" get deviceconfigs.amd.com -o name 2>/dev/null); do
+        kc -n "$AMD_NS" patch "$dc" --type merge -p '{"metadata":{"finalizers":null}}' >> "$LOG" 2>&1 || true; done
+    fi
+    hl uninstall amd-gpu-operator -n "$AMD_NS" --no-hooks --wait --timeout 3m >> "$LOG" 2>&1 || warn "helm uninstall amd-gpu-operator did not finish"
   fi
   # seen on the reference host: the exporter's health binary and gRPC socket, and its runtime folder
   rm -rf /var/lib/amd-metrics-exporter /var/run/exporter 2>/dev/null || true
