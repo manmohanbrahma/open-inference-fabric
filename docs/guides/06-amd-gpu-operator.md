@@ -75,6 +75,42 @@ resources:
     amd.com/gpu: 1
 ```
 
+## How the GPUs are visible
+
+Three views, tested 2026-10-25:
+
+| Where | NVIDIA RTX A6000 | AMD Radeon PRO W7900 |
+| --- | --- | --- |
+| Host | `nvidia-smi` (installed with the host driver) | no `amd-smi`: oif keeps the in-kernel `amdgpu` driver and installs no ROCm packages on the host |
+| Node, through the operator | DCGM exporter | `amd-smi` in the metrics exporter pod: `kubectl -n kube-amd-gpu exec ds/default-metrics-exporter -- amd-smi` |
+| A workload in a Run:ai project | `nvidia-smi` in the pod (injected by the NVIDIA container toolkit) | `amd-smi` in a pod using the exporter image (ROCm 7.14 SMI tools) |
+
+On the host, each GPU has its own DRM nodes; the device plugins hand a pod only its GPU's nodes:
+
+```bash
+lspci -nn | grep -i vga
+ls /dev/kfd; ls -l /dev/dri/by-path | awk 'NR>1 {print $9, $10, $11}'
+```
+
+| PCI address | GPU | Driver | Host device files | Given to a pod requesting |
+| --- | --- | --- | --- | --- |
+| 82:00.0 | RTX A6000 | nvidia | `/dev/nvidia0`, `nvidiactl`, `nvidia-uvm`, `/dev/dri/card2`, `renderD128` | `nvidia.com/gpu` |
+| c8:00.0 | Radeon PRO W7900 | amdgpu | `/dev/kfd` (shared compute interface), `/dev/dri/card0`, `renderD129` | `amd.com/gpu` |
+| 03:00.0 | Radeon PRO W6400 | vfio-pci | none (isolated) | never |
+| ca:00.0 | ASPEED (server management display) | ast | `/dev/dri/card1` | never |
+
+Run both workload views (one pod per vendor in project team-c; they stop after 2 minutes):
+
+```bash
+set -a; . ./versions.env; set +a
+NS=runai-team-c envsubst < platform/runai/smi-pods.yaml | kubectl apply -f -
+kubectl -n runai-team-c logs smi-nvidia     # nvidia-smi: GPU 0 NVIDIA RTX A6000, /dev/nvidia0, no /dev/kfd
+kubectl -n runai-team-c logs smi-amd        # amd-smi: GPU 0 AMD Radeon Pro W7900 at 0000:c8:00.0, /dev/kfd, renderD129, no /dev/nvidia*
+kubectl -n runai-team-c delete pod -l app.kubernetes.io/part-of=oif-smi
+```
+
+Each pod sees exactly one GPU, its own: the NVIDIA pod has no `/dev/kfd` and the AMD pod has no `/dev/nvidia*`. Inside a container the device numbering starts at 0 for both (`GPU 0` in `nvidia-smi`, `GPU: 0` in `amd-smi`), whatever the host numbering.
+
 ## Chart settings that matter
 
 From `platform/gpu-amd/values.yaml`:

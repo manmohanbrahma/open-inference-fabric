@@ -127,6 +127,19 @@ spec:
 
 From guide 5 on, GPU workloads are submitted through Run:ai projects, which apply quotas.
 
+### nvidia-smi inside a workload
+
+Once Run:ai is installed (guide 5), the first pod of [`platform/runai/smi-pods.yaml`](../../platform/runai/smi-pods.yaml) shows how a workload sees its GPU: `nvidia-smi` lists GPU 0, the RTX A6000, with the same driver and CUDA version as the host, and the pod has `/dev/nvidia0`, `nvidiactl` and `nvidia-uvm` plus the GPU's own `/dev/dri` nodes, injected by the NVIDIA container toolkit.
+
+```bash
+set -a; . ./versions.env; set +a
+NS=runai-team-a envsubst < platform/runai/smi-pods.yaml | awk '/^---/{exit} {print}' | kubectl apply -f -
+kubectl -n runai-team-a logs smi-nvidia
+kubectl -n runai-team-a delete pod smi-nvidia
+```
+
+Guide 6 shows the same for the AMD GPU, and how each pod sees only its own GPU.
+
 ## What changed on the host
 
 | Change | Reversed by `oif uninstall` |

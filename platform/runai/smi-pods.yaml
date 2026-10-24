@@ -1,0 +1,42 @@
+# How a workload sees its GPU: one pod per vendor in a Run:ai project's namespace, each running its vendor's SMI tool and
+# listing the device files it received. nvidia-smi comes from the NVIDIA container toolkit; amd-smi from the AMD device
+# metrics exporter image (ROCm SMI tools, no ROCm on the host). Both pods stop after 2 minutes; delete them with
+#   kubectl -n <namespace> delete pod -l app.kubernetes.io/part-of=oif-smi
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smi-nvidia
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/part-of: oif-smi
+spec:
+  schedulerName: runai-scheduler
+  runtimeClassName: nvidia
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: smi
+      image: ${CUDA_SAMPLE_IMAGE}
+      command: ["sh", "-c", "nvidia-smi; nvidia-smi -L; ls -l /dev/nvidia* /dev/dri; ls /dev/kfd; sleep 120"]
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smi-amd
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/part-of: oif-smi
+spec:
+  schedulerName: runai-scheduler
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: smi
+      image: ${AMD_METRICS_EXPORTER_IMAGE}
+      command: ["sh", "-c", "amd-smi; amd-smi list; ls -l /dev/kfd /dev/dri; ls /dev/nvidia*; sleep 120"]
+      resources:
+        limits:
+          amd.com/gpu: 1
