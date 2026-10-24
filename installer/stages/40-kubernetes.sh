@@ -28,7 +28,7 @@ stage_k8s_packages() {
 register_stage kubernetes
 register_teardown kubernetes
 stage_kubernetes() {
-  if [ -z "${POD_CIDR:-}" ]; then   # Kubernetes' defaults can overlap the host's own network (10.96.0.0/12 holds 10.98.x.x)
+  if [ -z "${POD_CIDR:-}" ]; then   # Kubernetes' defaults can overlap the host's own network (10.96.0.0/12 spans 10.96-10.111.x.x)
     POD_CIDR=$(pick_cidr 10.244.0.0/16 172.20.0.0/16 192.168.128.0/17) || die "no free pod network range"
     SERVICE_CIDR=$(pick_cidr 172.30.0.0/16 10.112.0.0/16 192.168.64.0/18) || die "no free service range"
     save POD_CIDR "$POD_CIDR"; save SERVICE_CIDR "$SERVICE_CIDR"
