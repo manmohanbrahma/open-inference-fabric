@@ -170,8 +170,9 @@ def template(token: str, path: str) -> None:
     if status != 200:
         sys.exit(f"GET templates: HTTP {status} {out}")
     found = next((e for e in out.get("entries", []) if e["meta"]["name"] == name), None)
-    if found:
-        status, out = call("PUT", f"/api/v1/workload-templates/{kind}/{found['meta']['id']}", t, token)
+    if found:   # an update takes only name and description in meta; the scope stays as created
+        upd = {"meta": {k: v for k, v in t["meta"].items() if k in ("name", "description")}, "spec": t["spec"]}
+        status, out = call("PUT", f"/api/v1/workload-templates/{kind}/{found['meta']['id']}", upd, token)
         verb = "updated"
     else:
         status, out = call("POST", f"/api/v1/workload-templates/{kind}", t, token)
