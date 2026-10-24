@@ -94,6 +94,47 @@ stage_runai() {
   ok "Run:ai $RUNAI_VERSION installed"
 }
 
+RUNAI_FRACTIONS_MIN_DRIVER=615   # Run:ai 3.0 support matrix: GPU fractions need driver r615 or later
+register_stage runai-fractions RUNAI_VERSION
+stage_runai_fractions() {   # the fractioning daemons (fractiond, mpsd) only where the driver supports them
+  local v; v=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+  if [ -n "$v" ] && [ "${v%%.*}" -lt $RUNAI_FRACTIONS_MIN_DRIVER ]; then
+    # the chart's CR targets every node with nvidia.com/gpu.present; adding a label no node carries keeps the
+    # daemons off (mpsd crash-loops on older drivers). A Run:ai upgrade re-creates the CR, so this stage re-runs.
+    fractioning_selector enabled
+    wait_for "GPU fractioning daemons removed" 300 5 bash -c \
+      "[ -z \"\$(kubectl --kubeconfig $KCFG -n runai get pods --no-headers -l app.kubernetes.io/managed-by=gpu-fractioning 2>/dev/null)\" ]" \
+      || die "GPU fractioning daemons still running (kubectl -n runai get pods | grep fractioning)"
+    warn "GPU fractions off: driver $v is older than r$RUNAI_FRACTIONS_MIN_DRIVER (whole GPUs, quotas and projects work)"
+  else
+    fractioning_selector ""
+    ok "GPU fractions available (driver $v)"
+  fi
+}
+
+fractioning_selector() {   # value: re-create the GpuFractioningConfig with oif.ai/gpu-fractions=<value> required ("" = not)
+  local cur new; cur=$(kc get gpufractioningconfig default -o json) || die "GpuFractioningConfig default not found"
+  new=$(WANT=$1 python3 -c '
+import json, os, sys
+o = json.load(sys.stdin); want = os.environ["WANT"]
+sel = o["spec"].setdefault("nodeSelector", {})
+if (sel.get("oif.ai/gpu-fractions") or "") == want: sys.exit(3)          # already as wanted
+if want: sel["oif.ai/gpu-fractions"] = want
+else: sel.pop("oif.ai/gpu-fractions", None)
+m = o["metadata"]; o["metadata"] = {k: m[k] for k in ("name", "labels", "annotations") if k in m}
+o.pop("status", None); print(json.dumps(o))' <<< "$cur") || { [ $? = 3 ] && return 0; die "cannot build GpuFractioningConfig"; }
+  # nodeSelector is immutable and the object must be named "default" (no dry run possible): replace it, and put the
+  # original back if the new one is rejected
+  local old; old=$(python3 -c 'import json, sys
+o = json.load(sys.stdin); m = o["metadata"]; o["metadata"] = {k: m[k] for k in ("name", "labels", "annotations") if k in m}
+o.pop("status", None); print(json.dumps(o))' <<< "$cur")
+  kc delete gpufractioningconfig default --wait=true >> "$LOG" || die "cannot delete GpuFractioningConfig"
+  if ! kc create -f - <<< "$new" >> "$LOG" 2>&1; then
+    kc create -f - <<< "$old" >> "$LOG" 2>&1 || warn "the original GpuFractioningConfig could not be restored either"
+    die "new GpuFractioningConfig rejected (see $LOG); the original was restored"
+  fi
+}
+
 register_stage runai-verify RUNAI_VERSION
 stage_runai_verify() {
   local ns code; RUNAI_DOMAIN=$(runai_domain)
