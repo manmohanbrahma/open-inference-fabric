@@ -9,7 +9,7 @@ One guide per step of the plan in [TASKS.md](../../TASKS.md). Each guide is writ
 | 3 | [Kubernetes, storage and load balancer](03-kubernetes.md) | T-103 | Tested |
 | 4 | [NVIDIA GPU Operator](04-nvidia-gpu-operator.md) | T-104 | Tested |
 | 5 | [Run:ai open source](05-runai.md) (published with screenshots: [Installation Guide](https://manmohanbrahma.github.io/ai/runai/install-guide/), [Deployment Guide](https://manmohanbrahma.github.io/ai/runai/deployment-guide/)) | T-105 | Tested |
-| 6 | [AMD GPU Operator and Run:ai quotas on AMD GPUs](06-amd-gpu-operator.md) | T-111, S-2 | Tested |
+| 6 | [AMD GPU Operator and Run:ai quotas on AMD GPUs](06-amd-gpu-operator.md) | T-111, S-2, T-113 | Tested |
 | 7 | Observability for NVIDIA and AMD | T-106, T-112 | Planned |
 | 8 | Uninstall | T-107 | Planned |
 

@@ -11,6 +11,7 @@ Current state of the project. Update after every task.
 - T-105 on 2026-10-24: Run:ai 3.0.20 (control plane + cluster "oif"), kube-prometheus-stack 92.3.0, HAProxy on the first MetalLB address, private CA, sslip.io domain, CoreDNS block for the domain, GPU fractions off (driver 595 < r615). Quota test passed: team-b (0 GPU) NonPreemptibleOverQuota on a free GPU, team-a (1 GPU) ran. Over-quota is off by default in Run:ai.
 - T-104 installed on 2026-10-24: GPU Operator v26.7.1 (host driver), nvidia.com/gpu 1, CUDA vectorAdd passed in a pod, DCGM exporter 23 metrics.
 - T-111 and S-2 on 2026-10-25: AMD GPU Operator v1.5.1 on the in-kernel amdgpu driver; amd.com/gpu 1 (W7900, 45G, GC_11_0_0); pod got /dev/kfd and renderD; exporter healthy (raised UMC ECC threshold) and scraped by Prometheus. Run:ai quota enforced on amd.com/gpu (team-b NonPreemptibleOverQuota, team-a ran). One GPU quota counts both vendors.
+- T-113 on 2026-10-25 (ADR-015): project team-c, Run:ai quota 2, ResourceQuota oif-gpu-vendor caps 1 NVIDIA + 1 AMD; both pods ran, a second NVIDIA pod was refused (exceeded quota). Run:ai accepted quota 2 although its node view counts only the A6000.
 
 ## Plan
 
@@ -18,11 +19,11 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 done, spike S-2 passed (guide 6). Next: T-113 node pools per vendor, T-112 recording rules, T-106/T-114 dashboards, T-107 uninstall test.
+P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-113 done, spike S-2 passed (guide 6). Next: T-112 recording rules, T-106/T-114 dashboards, T-107 uninstall test.
 
 ## Next step
 
-T-113: Run:ai node pools `nvidia` and `amd` (label the node's GPUs per vendor; on a single node both GPUs share one node, so check how Run:ai node pools split a mixed node first), then the quota 1+1 checkpoint.
+T-112: `oif:gpu_*` recording rules over DCGM and the AMD exporter, with promtool unit tests; then T-106/T-114 Grafana dashboards showing both vendors.
 
 ## Notes
 
@@ -38,7 +39,7 @@ T-113: Run:ai node pools `nvidia` and `amd` (label the node's GPUs per vendor; o
 - Dynamo has no official ROCm support (ADR-002); decided by S-1.
 - SGLang ROCm builds target Instinct GPUs; serving on the W7900 (gfx1100) is unproven (S-5).
 - TensorRT-LLM support for the A6000 (Ampere) must be checked before T-204.
-- Run:ai GPU quotas count `amd.com/gpu` (S-2), but as one count with NVIDIA: per-vendor quotas need node pools (T-113).
+- Run:ai GPU quotas count `amd.com/gpu` (S-2) as one count with NVIDIA; per-vendor caps come from a Kubernetes ResourceQuota (ADR-015). Run:ai's UI counts NVIDIA GPUs only.
 - AMD GPU Operator v1.5.1 needs `kmm.watch: false` as well as `kmm.enabled: false`, or its controller crash-loops after two minutes.
 - The open-source Run:ai control plane's footprint on a single node is unknown; measured in S-3.
 - The W7900 is a workstation GPU (gfx1100); AMD validates distributed serving stacks on Instinct GPUs.

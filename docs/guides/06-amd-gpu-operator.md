@@ -1,6 +1,6 @@
 # 6. AMD GPU Operator and Run:ai quotas on AMD GPUs
 
-**Step:** T-111 (and spike S-2). **Tested:** 2026-10-25, AMD GPU Operator v1.5.1 with a Radeon PRO W7900 on the reference host.
+**Step:** T-111, spike S-2 and T-113. **Tested:** 2026-10-25, AMD GPU Operator v1.5.1 with a Radeon PRO W7900 on the reference host.
 
 ## What you get
 
@@ -99,7 +99,32 @@ Nothing on the host itself: the step adds Kubernetes objects only (namespace `ku
 | `<bdf> is on driver 'vfio-pci', not amdgpu` | The GPU is isolated for VMs in `.env` (`ISOLATE_GPUS`); remove it there, run `sudo ./oif install --reconfigure` and reboot when asked. |
 | `/dev/kfd is missing` | The amdgpu driver did not enable compute: `sudo dmesg \| grep -i kfd`. |
 
+## Per-vendor quotas (T-113)
+
+A Run:ai project's GPU quota is a single count for both vendors, and a Run:ai node pool is a node label, so one node holding both GPUs cannot be split into `nvidia` and `amd` pools (ADR-015). oif keeps Run:ai's total quota and adds a Kubernetes ResourceQuota per vendor in the project's namespace (`platform/runai/vendor-quota.yaml`).
+
+Stage `vendor-quota` (tested 2026-10-25) creates project team-c with a Run:ai quota of 2 GPUs, caps it at 1 NVIDIA + 1 AMD, runs one pod per vendor and tries a second NVIDIA pod:
+
+```text
+== stage: vendor-quota
+resourcequota/oif-gpu-vendor created
+  [ok] project team-c (Run:ai quota 2 GPUs, namespace runai-team-c) capped at 1 NVIDIA + 1 AMD GPU
+  [ok] team-c runs one GPU of each vendor
+  [ok] team-c runs GPU 0: NVIDIA RTX A6000 and the AMD GPU (/dev/kfd  /dev/dri: card0 renderD129 )
+  [ok] a second NVIDIA GPU pod is refused: exceeded quota: oif-gpu-vendor, requested: requests.nvidia.com/gpu=1, used: requests.nvidia.com/gpu=1, limited: requests.nvidia.com/gpu=1
+  [ok] T-113 passed: per-vendor GPU caps inside one Run:ai project (project team-c and its quota kept)
+```
+
+To cap another project, apply the same template to its namespace:
+
+```bash
+NS=runai-<project> NVIDIA_GPU_CAP=1 AMD_GPU_CAP=1   # then substitute into platform/runai/vendor-quota.yaml and kubectl apply
+kubectl -n runai-<project> describe resourcequota oif-gpu-vendor
+```
+
+A pod over a vendor cap is refused when it is created (`exceeded quota`), not queued; Run:ai's own quota still queues pods over the project's total.
+
 ## Known limits
 
-- **One GPU quota for both vendors.** A Run:ai project's GPU quota is a single count: a project with quota 1 can use either the NVIDIA or the AMD GPU. Per-vendor quotas need a node pool per vendor (T-113).
+- **Run:ai counts NVIDIA GPUs only.** Its UI and node APIs report `gpuCount: 1` (the A6000) on this host; the scheduler still enforces quotas on the AMD GPU. Both vendors are shown together in oif's Grafana dashboards (T-114).
 - The W7900 is a workstation GPU; Run:ai documents data-centre GPUs. Whole-GPU scheduling works; GPU fractions are NVIDIA-only.
