@@ -1,0 +1,35 @@
+# Builds Run:ai's cluster-sync with oif's patches (patches/runai/) into an image tarball in the oif state folder.
+# The installer imports it into containerd and points Run:ai's operator at it (stage runai-patches).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: runai-patch-cluster-sync
+  namespace: oif-build
+  labels:
+    app.kubernetes.io/managed-by: oif
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: build
+          image: ${GO_BUILD_IMAGE}
+          command: ["sh", "/build/build-cluster-sync.sh"]
+          env:
+            - {name: RUNAI_VERSION, value: "${RUNAI_VERSION}"}
+            - {name: RUNAI_SOURCE_SHA256, value: "${RUNAI_SOURCE_SHA256}"}
+            - {name: CRANE_VERSION, value: "${CRANE_VERSION}"}
+            - {name: BASE_IMAGE, value: "nvcr.io/nvidia/runai-oss/cluster-sync:${RUNAI_VERSION}"}
+            - {name: NEW_IMAGE, value: "${RUNAI_PATCHED_IMAGE}"}
+          resources:
+            requests: {cpu: "4", memory: 4Gi}
+          volumeMounts:
+            - {name: script, mountPath: /build}
+            - {name: patches, mountPath: /patches}
+            - {name: out, mountPath: /out}
+      volumes:
+        - {name: script, configMap: {name: runai-patch-build}}
+        - {name: patches, configMap: {name: runai-patches}}
+        - {name: out, hostPath: {path: "${RUNAI_PATCH_OUT}", type: DirectoryOrCreate}}

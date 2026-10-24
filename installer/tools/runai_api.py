@@ -4,6 +4,7 @@
 Credentials come from the environment (RUNAI_URL, RUNAI_USER, RUNAI_PASSWORD, RUNAI_CA); tokens and passwords are
 never printed. Commands:
   check                                  log in and print the clusters
+  nodes                                  print each node with its GPU type and count as Run:ai sees them
   project NAME GPU_DESERVED GPU_LIMIT    create the project if missing (GPU_LIMIT -1 = no limit), print its namespace
   admin EMAIL                            make EMAIL a System administrator with the password in RUNAI_NEW_PASSWORD
   template FILE                          create or update the workload template in FILE (JSON)
@@ -201,12 +202,24 @@ def submit(token: str, kind: str, name: str, project_name: str, template_name: s
     print(f"{kind[:-1]} {name} submitted in project {project_name} from template {template_name}")
 
 
+def nodes(token: str) -> None:
+    """Print each node as Run:ai sees it: name, GPU type, GPU count (the count last, for scripts)."""
+    status, out = call("GET", "/api/v1/nodes", token=token)
+    if status != 200:
+        sys.exit(f"GET nodes: HTTP {status} {out}")
+    for n in out.get("nodes", []):
+        g = n.get("gpuInfo") or {}
+        print(f"{n.get('name')} type={g.get('gpuType', '-').replace(' ', '')} gpus {g.get('gpuCount', 0)}")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     token = login()
     if cmd == "check":
         for c in clusters(token):
             print(c.get("name"), c.get("uuid"), c.get("version", ""), c.get("lastLiveness", ""))
+    elif cmd == "nodes":
+        nodes(token)
     elif cmd == "project" and len(sys.argv) == 5:
         project(token, sys.argv[2], float(sys.argv[3]), float(sys.argv[4]))
     elif cmd == "admin" and len(sys.argv) == 3:

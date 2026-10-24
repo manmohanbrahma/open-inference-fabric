@@ -52,13 +52,22 @@ stage_pki() {   # a private CA (10 years) and one certificate for the Run:ai dom
   ok "certificate for $d and *.$d (CA for browsers: $UHOME/oif-ca.crt)"
 }
 
-register_stage runai-dns
-stage_runai_dns() {   # cluster DNS answers the Run:ai domain itself (pods do not depend on external DNS for it)
+RUNAI_DNS_REV=2   # 2: forward only to the host's DNS servers that answer
+register_stage runai-dns RUNAI_DNS_REV
+stage_runai_dns() {   # cluster DNS answers the Run:ai domain itself, and forwards only to DNS servers that answer
   export RUNAI_DOMAIN INGRESS_IP; RUNAI_DOMAIN=$(runai_domain); INGRESS_IP=$(first_ip "$METALLB_RANGE")
-  local patch dnsip r
-  patch=$(BLOCK=$(render "$OIF_HOME/platform/runai/coredns-block.txt") CUR=$(kc -n kube-system get cm coredns -o jsonpath='{.data.Corefile}') python3 -c '
+  local patch dnsip r s answering=""
+  # A host DNS server that refuses queries makes pods fail lookups at random (CoreDNS spreads queries over every
+  # server in /etc/resolv.conf). Forward only to the servers that answer; keep /etc/resolv.conf if none does.
+  for s in $(host_nameservers); do [[ $(dns_query "$s" registry.k8s.io) == "rcode 0 "?* ]] && answering+=" $s"; done
+  if [ -n "$answering" ]; then ok "cluster DNS forwards to:$answering"
+  else warn "no host DNS server answered a test query: CoreDNS keeps /etc/resolv.conf"; fi
+  patch=$(BLOCK=$(render "$OIF_HOME/platform/runai/coredns-block.txt") CUR=$(kc -n kube-system get cm coredns -o jsonpath='{.data.Corefile}') FWD=$answering python3 -c '
 import json, os, re
 cur = re.sub(r"# BEGIN oif runai-dns.*?# END oif runai-dns\n?", "", os.environ["CUR"], flags=re.S)
+fwd = os.environ["FWD"].split()
+if fwd:   # the main server block forwards to the answering servers instead of /etc/resolv.conf (or an older list)
+    cur = re.sub(r"forward \. [^{\n]*\{", "forward . " + " ".join(fwd) + " {", cur, count=1)
 print(json.dumps({"data": {"Corefile": os.environ["BLOCK"].rstrip("\n") + "\n" + cur}}))') || die "cannot build the CoreDNS configuration"
   kc -n kube-system patch configmap coredns --type merge -p "$patch" >> "$LOG" || die "CoreDNS configuration rejected"
   kc -n kube-system rollout restart deploy/coredns >> "$LOG"
@@ -167,6 +176,50 @@ stage_runai_admin() {   # the owner's administrator account from the settings; t
   out=$(RUNAI_NEW_PASSWORD=$RUNAI_ADMIN_PASSWORD runai_api admin "$RUNAI_ADMIN_EMAIL" 2>&1) || die "Run:ai administrator $RUNAI_ADMIN_EMAIL: $out"
   sed 's/^/    /' <<< "$out" | tee -a "$TLOG"
   ok "log in to Run:ai as $RUNAI_ADMIN_EMAIL with the password from the settings"
+}
+
+# T-115: Run:ai counts AMD GPUs on nodes that also have NVIDIA GPUs (patches/runai/). The stage reruns when a patch,
+# the build script or a pinned version changes; RUNAI_PATCHES=none in the settings puts the stock images back.
+runai_patch_rev() { cat "$OIF_HOME"/patches/runai/build-cluster-sync.sh "$OIF_HOME"/patches/runai/"$RUNAI_VERSION"/*.patch 2>/dev/null \
+  | { cat; echo "$GO_BUILD_IMAGE $CRANE_VERSION $RUNAI_SOURCE_SHA256 ${RUNAI_PATCHES:-}"; } | sha256sum | cut -c1-12; }
+RUNAI_PATCHED_IMAGE=oif.local/runai-oss/cluster-sync:$RUNAI_VERSION-oif1
+
+register_stage runai-patches runai_patch_rev
+stage_runai_patches() {
+  local out=$STATE/build/runai patch img
+  if [ "${RUNAI_PATCHES:-}" = none ]; then
+    kc -n runai patch runaiconfig runai --type json -p '[{"op":"remove","path":"/spec/cluster-sync/image"}]' >> "$LOG" 2>&1 || true
+    ok "Run:ai uses its stock cluster-sync image (RUNAI_PATCHES=none)"; return 0
+  fi
+  ls "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*.patch >/dev/null 2>&1 || { warn "no oif patches for Run:ai $RUNAI_VERSION: stock images kept"; return 0; }
+  mkdir -p "$out"; rm -f "$out/cluster-sync.tar"
+  kc create namespace oif-build --dry-run=client -o yaml | kc apply -f - >> "$LOG"
+  kc -n oif-build create configmap runai-patch-build --from-file="$OIF_HOME/patches/runai/build-cluster-sync.sh" --dry-run=client -o yaml | kc apply -f - >> "$LOG"
+  kc -n oif-build create configmap runai-patches --from-file="$OIF_HOME/patches/runai/$RUNAI_VERSION/" --dry-run=client -o yaml | kc apply -f - >> "$LOG"
+  kc -n oif-build delete job runai-patch-cluster-sync --ignore-not-found --wait=true >> "$LOG" 2>&1
+  export GO_BUILD_IMAGE RUNAI_VERSION RUNAI_SOURCE_SHA256 CRANE_VERSION RUNAI_PATCHED_IMAGE RUNAI_PATCH_OUT=$out
+  render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job rejected"
+  log "building cluster-sync with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*.patch | sed 's|./||' | paste -sd' ') (5-15 min)"
+  wait_for "cluster-sync built" 1800 15 bash -c \
+    "kubectl --kubeconfig $KCFG -n oif-build get job runai-patch-cluster-sync -o jsonpath='{.status.conditions[*].type}' | grep -qE 'Complete|Failed'" || true
+  kc -n oif-build logs job/runai-patch-cluster-sync 2>&1 | grep -E '^(==|ok|FAIL|---)' | sed 's/^/    /' | tee -a "$TLOG"
+  [ "$(kc -n oif-build get job runai-patch-cluster-sync -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/cluster-sync.tar" ] \
+    || die "cluster-sync build failed (kubectl -n oif-build logs job/runai-patch-cluster-sync)"
+  ctr -n k8s.io images import "$out/cluster-sync.tar" >> "$LOG" 2>&1 || die "cannot import the patched image into containerd"
+  img=$(ctr -n k8s.io images ls -q | grep -xF "$RUNAI_PATCHED_IMAGE") || die "image $RUNAI_PATCHED_IMAGE not found after import"
+  ok "patched image $img loaded into containerd"
+  patch=$(printf '{"spec":{"cluster-sync":{"image":{"registry":"%s","name":"%s","tag":"%s","pullPolicy":"IfNotPresent"}}}}' \
+    "${RUNAI_PATCHED_IMAGE%/*}" "$(basename "${RUNAI_PATCHED_IMAGE%:*}")" "${RUNAI_PATCHED_IMAGE##*:}")
+  kc -n runai patch runaiconfig runai --type merge -p "$patch" >> "$LOG" || die "RunaiConfig rejected the image override"
+  wait_for "cluster-sync runs the patched image" 300 10 bash -c \
+    "[ \"\$(kubectl --kubeconfig $KCFG -n runai get deploy cluster-sync -o jsonpath='{.spec.template.spec.containers[0].image}')\" = $RUNAI_PATCHED_IMAGE ] && kubectl --kubeconfig $KCFG -n runai rollout status deploy/cluster-sync --timeout=10s" \
+    || die "cluster-sync did not roll out the patched image (kubectl -n runai describe deploy cluster-sync)"
+  wait_for "Run:ai counts every GPU of the node" 300 15 runai_nodes_total_gpus_ok || warn "Run:ai still counts fewer GPUs than the node offers"
+  runai_api nodes | sed 's/^/    /' | tee -a "$TLOG"
+}
+runai_nodes_total_gpus_ok() {   # every node's GPU count in Run:ai equals its nvidia.com/gpu + amd.com/gpu
+  local want got; want=$(kc get nodes -o json | python3 -c 'import json,sys; print(sum(int(n["status"]["allocatable"].get(r,0)) for n in json.load(sys.stdin)["items"] for r in ("nvidia.com/gpu","amd.com/gpu")))')
+  got=$(runai_api nodes | awk '{s+=$NF} END {print s+0}'); [ "$want" = "$got" ]
 }
 
 register_stage runai-quota

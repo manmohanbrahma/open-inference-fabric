@@ -2,7 +2,7 @@
 # Settings: read from .env (never executed), validated, missing values asked, saved to $CONF (mode 600).
 
 CONFIG_KEYS=(HOST_IP METALLB_RANGE INSTALL_DIR NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS
-             HF_TOKEN RUNAI_DOMAIN RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID)
+             HF_TOKEN RUNAI_DOMAIN RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID RUNAI_PATCHES)
 
 env_parse() {   # file: print KEY<TAB>VALUE for the known keys; values are data, never evaluated
   python3 - "$1" "${CONFIG_KEYS[@]}" <<'PY'
@@ -105,10 +105,12 @@ v_dir() { [[ $1 == /* && $1 != / ]] || { echo "give an absolute path (not /)"; r
 v_any() { return 0; }
 v_domain() { [ -z "$1" ] || [[ $1 =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "not a domain name"; return 1; }; }
 first_ip() { echo "${1%%-*}"; }   # first address of a range
+v_patches() { case "$1" in ""|all|none) ;; *) echo "use all (empty) or none"; return 1 ;; esac; }
 runai_domain() { echo "${RUNAI_DOMAIN:-runai.$(first_ip "$METALLB_RANGE" | tr . -).sslip.io}"; }
 
 CONFIG_CHECKS=(HOST_IP:v_ip_here METALLB_RANGE:v_range INSTALL_DIR:v_dir NVIDIA_GPUS:v_nv AMD_GPUS:v_amd ISOLATE_GPUS:v_iso
-               RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_runai_password GRAFANA_ADMIN_PASSWORD:check_password)
+               RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_runai_password GRAFANA_ADMIN_PASSWORD:check_password
+               RUNAI_PATCHES:v_patches)
 config_validate() {   # saved settings still valid on this host (secret values are never printed)
   local kv k f why bad=0
   for kv in "${CONFIG_CHECKS[@]}"; do k=${kv%%:*}; f=${kv#*:}

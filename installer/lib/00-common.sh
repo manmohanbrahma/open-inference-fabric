@@ -60,7 +60,9 @@ declare -A STAGE_PIN=()
 # name [VERSION_VAR]: the function is stage_<name with - as _>. A stage pinned to a variable from versions.env
 # runs again when that version changes (its done marker holds the version it ran with).
 register_stage() { STAGES+=("$1"); [ -z "${2:-}" ] || STAGE_PIN[$1]=$2; }
-stage_want() { local v=${STAGE_PIN[$1]:-}; [ -z "$v" ] || echo "${!v}"; }
+stage_want() {   # the pinned value: a variable, or a function evaluated when the stage runs (after the settings are loaded)
+  local v=${STAGE_PIN[$1]:-}; [ -z "$v" ] && return 0
+  if declare -F "$v" >/dev/null; then "$v"; else echo "${!v}"; fi; }
 done_() { [ -f "$DONE/$1" ] && [ "$(cat "$DONE/$1")" = "$(stage_want "$1")" ]; }
 stage() { local s=$1; done_ "$s" && return 0
   if [ -s "$DONE/$s" ]; then log "stage: $s ($(cat "$DONE/$s") -> $(stage_want "$s"))"; else log "stage: $s"; fi
