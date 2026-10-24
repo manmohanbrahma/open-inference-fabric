@@ -5,10 +5,11 @@
 AMD_NS=kube-amd-gpu
 AMD_WORKSTATION_IDS="7448 744a 745e"     # Radeon PRO W7900 / W7900 dual slot / W7800: kernel 7.0 phantom UMC ECC errors
 AMD_ECC_UMC_THRESHOLD=4000000000
+AMD_GPU_OPERATOR_REV=$AMD_GPU_OPERATOR_VERSION-r2   # bump the suffix when platform/gpu-amd/ changes: reruns the stages
 
 amd_targets() { discover_gpus; if [ -n "${AMD_GPUS:-}" ]; then echo "${AMD_GPUS//,/ }"; else echo "${AMD_BDFS[*]}"; fi; }
 
-register_stage amd-gpu-operator AMD_GPU_OPERATOR_VERSION
+register_stage amd-gpu-operator AMD_GPU_OPERATOR_REV
 stage_amd_gpu_operator() {
   local b t chart ws=""; t=$(amd_targets)
   [ -n "$t" ] || { warn "no AMD compute GPU: AMD GPU Operator skipped"; return 0; }
@@ -32,11 +33,16 @@ stage_amd_gpu_operator() {
   wait_for "AMD GPU node labelled by Node Feature Discovery" 300 10 bash -c \
     "kubectl --kubeconfig $KCFG get nodes -l feature.node.kubernetes.io/amd-gpu=true --no-headers | grep -q ." \
     || die "no node labelled feature.node.kubernetes.io/amd-gpu=true (kubectl get nodefeaturerules; NFD runs in namespace gpu-operator)"
+  # The controller is ready for its first minutes even when it later crash-loops; only its device plugin proves it works.
+  wait_for "AMD device plugin running" 600 10 bash -c \
+    "n=\$(kubectl --kubeconfig $KCFG -n $AMD_NS get ds default-device-plugin -o jsonpath='{.status.desiredNumberScheduled}/{.status.numberReady}'); [ \"\${n%/*}\" -gt 0 ] && [ \"\${n%/*}\" = \"\${n#*/}\" ]" \
+    || { kc -n "$AMD_NS" get pods | tee -a "$TLOG"; kc -n "$AMD_NS" logs deploy/amd-gpu-operator-gpu-operator-charts-controller-manager --tail=5 2>&1 | tee -a "$TLOG"
+         die "AMD device plugin not running (kubectl -n $AMD_NS logs deploy/amd-gpu-operator-gpu-operator-charts-controller-manager)"; }
   wait_for "AMD GPU Operator pods running" 600 10 pods_settled "$AMD_NS" \
     || { kc -n "$AMD_NS" get pods | grep -vE 'Running|Completed' | tee -a "$TLOG"; die "AMD GPU Operator pods not running"; }
 }
 
-register_stage amd-gpu-verify AMD_GPU_OPERATOR_VERSION
+register_stage amd-gpu-verify AMD_GPU_OPERATOR_REV
 stage_amd_gpu_verify() {
   local want node out ip m; want=$(amd_targets | wc -w); [ "$want" -gt 0 ] || return 0
   node=$(kc get nodes -o jsonpath='{.items[0].metadata.name}')

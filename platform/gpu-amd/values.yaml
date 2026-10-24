@@ -5,11 +5,13 @@ node-feature-discovery:
 installdefaultNFDRule: true
 kmm:
   enabled: false        # no driver build: the kernel's own amdgpu driver is used
+  watch: false          # without this the controller waits for KMM's CRDs and crash-loops
 remediation:
   enabled: false
 crds:
   defaultCR:
     install: true
+    upgrade: true       # oif owns the default DeviceConfig: a rerun re-applies it
 draDriver:
   deviceClass:
     create: false       # GPUs are handed out by the device plugin, not Dynamic Resource Allocation
