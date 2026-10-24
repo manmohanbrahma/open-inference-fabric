@@ -1,0 +1,20 @@
+# Proves a pod gets an AMD GPU: the device plugin hands it the compute device (/dev/kfd) and one render node.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oif-amd-test
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: amd
+  namespace: oif-amd-test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: devices
+      image: ${BUSYBOX_IMAGE}
+      command: ["sh", "-c", "ls -l /dev/kfd /dev/dri/renderD*"]
+      resources:
+        limits:
+          amd.com/gpu: 1

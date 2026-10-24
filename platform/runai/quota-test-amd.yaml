@@ -1,0 +1,19 @@
+# One pod asking for a whole AMD GPU through the Run:ai scheduler, in a Run:ai project's namespace.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: amd-quota-test
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/part-of: oif-quota-test
+spec:
+  schedulerName: runai-scheduler
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: gpu
+      image: ${BUSYBOX_IMAGE}
+      command: ["sh", "-c", "ls /dev/kfd /dev/dri && sleep 600"]
+      resources:
+        limits:
+          amd.com/gpu: 1

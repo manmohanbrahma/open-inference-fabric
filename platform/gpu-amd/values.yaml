@@ -1,0 +1,44 @@
+# AMD GPU Operator on the in-kernel amdgpu driver: device plugin, node labeller and metrics exporter.
+# Node Feature Discovery already runs (from the NVIDIA GPU Operator); only AMD's NodeFeatureRule is added.
+node-feature-discovery:
+  enabled: false
+installdefaultNFDRule: true
+kmm:
+  enabled: false        # no driver build: the kernel's own amdgpu driver is used
+remediation:
+  enabled: false
+crds:
+  defaultCR:
+    install: true
+draDriver:
+  deviceClass:
+    create: false       # GPUs are handed out by the device plugin, not Dynamic Resource Allocation
+deviceConfig:
+  spec:
+    selector:
+      feature.node.kubernetes.io/amd-gpu: "true"
+    driver:
+      enable: false
+    commonConfig:
+      initContainerImage: ${BUSYBOX_IMAGE}
+      utilsContainer:
+        image: ${AMD_UTILS_IMAGE}
+    devicePlugin:
+      enableDevicePlugin: true
+      devicePluginImage: ${AMD_DEVICE_PLUGIN_IMAGE}
+      enableNodeLabeller: true
+      nodeLabellerImage: ${AMD_NODE_LABELLER_IMAGE}
+      devicePluginArguments:
+        resource_naming_strategy: single      # every AMD GPU is amd.com/gpu
+    metricsExporter:
+      enable: true
+      image: ${AMD_METRICS_EXPORTER_IMAGE}
+      config:
+        name: amd-metrics-config
+      prometheus:
+        serviceMonitor:
+          enable: true
+    testRunner:
+      enable: false
+    configManager:
+      enable: false

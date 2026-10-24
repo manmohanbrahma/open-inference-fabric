@@ -1,0 +1,17 @@
+# AMD device metrics exporter configuration. On kernel 7.0 the in-kernel amdgpu driver reports phantom
+# uncorrectable UMC ECC errors on Radeon PRO W7900/W7800 cards; their health threshold is raised so the
+# exporter does not mark the GPU unhealthy. oif sets the threshold only on hosts with such a card.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amd-metrics-config
+  namespace: kube-amd-gpu
+data:
+  config.json: |
+    {
+      "GPUConfig": {
+        "HealthThresholds": {
+          "GPU_ECC_UNCORRECT_UMC": ${AMD_ECC_UMC_THRESHOLD}
+        }
+      }
+    }
