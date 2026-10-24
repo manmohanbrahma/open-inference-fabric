@@ -58,7 +58,11 @@ def node_pool(token: str, cluster: str, name: str) -> dict:
     for path in (f"/api/v1/node-pools?filterBy=clusterId=={cluster}", "/api/v1/node-pools"):
         status, out = call("GET", path, token=token)
         if status == 200:
-            pools = out.get("nodePools", out) if isinstance(out, dict) else out
+            pools = out
+            if isinstance(out, dict):   # the list sits under a key ("nodepools", "nodePools", ...): take the list of objects
+                pools = next((v for v in out.values() if isinstance(v, list) and v and isinstance(v[0], dict)), [])
+                if not pools:
+                    print(f"node pools: no list in response keys {sorted(out)}", file=sys.stderr)
             for p in pools or []:
                 if p.get("name") == name and (not p.get("clusterId") or p.get("clusterId") == cluster):
                     return {"id": str(p["id"]), "name": p["name"]}
