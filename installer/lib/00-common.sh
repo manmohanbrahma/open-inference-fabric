@@ -56,9 +56,15 @@ block_set() { local f=$1 tag=$2 body=$3
 
 # ---------------------------------------------------------------- stages: idempotent steps, skipped once done
 STAGES=()
-register_stage() { STAGES+=("$1"); }            # name; the function is stage_<name with - as _>
-done_() { [ -f "$DONE/$1" ]; }
-stage() { local s=$1; done_ "$s" && return 0; log "stage: $s"; "stage_${s//-/_}"; touch "$DONE/$s"; }
+declare -A STAGE_PIN=()
+# name [VERSION_VAR]: the function is stage_<name with - as _>. A stage pinned to a variable from versions.env
+# runs again when that version changes (its done marker holds the version it ran with).
+register_stage() { STAGES+=("$1"); [ -z "${2:-}" ] || STAGE_PIN[$1]=$2; }
+stage_want() { local v=${STAGE_PIN[$1]:-}; [ -z "$v" ] || echo "${!v}"; }
+done_() { [ -f "$DONE/$1" ] && [ "$(cat "$DONE/$1")" = "$(stage_want "$1")" ]; }
+stage() { local s=$1; done_ "$s" && return 0
+  if [ -s "$DONE/$s" ]; then log "stage: $s ($(cat "$DONE/$s") -> $(stage_want "$s"))"; else log "stage: $s"; fi
+  "stage_${s//-/_}"; stage_want "$s" > "$DONE/$s"; }
 run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; done; }
 
 # ---------------------------------------------------------------- small helpers

@@ -10,6 +10,15 @@ Findings that shaped the PRD and decisions, collected on 2026-10-24. Re-check ve
 - Related: **Model Streamer** (fast weight loading, `--load-format runai_streamer` in vLLM and SGLang) and **Grove** (gang-scheduled multi-component inference; part of Dynamo).
 - Run:ai integrates with KServe, LeaderWorkerSet and Dynamo graph deployments. Documentation is NVIDIA-centric; AMD GPU support in KAI quotas is not documented (spike S-2).
 
+### Installing open-source Run:ai 3.0 (spike S-3 research, 2026-10-24)
+
+- Latest release 3.0.20 (2026-10-11). `runai-installer` binary per OS with `runai-installer-SHA256SUMS`; charts `helm.ngc.nvidia.com/nvidia/runai-oss` (`control-plane`, `runai-cluster`), images `nvcr.io/nvidia/runai-oss`, both public: open source needs no NGC key.
+- Support matrix: upstream Kubernetes 1.35-1.37 with containerd; GPU Operator 25.10-26.7.1; kube-prometheus-stack 88.6.5 or newer; bundled Keycloak 26.6, PostgreSQL 16, Traefik 3.7, NATS 2.11.8, Thanos 0.38, Valkey 9.0.4; feature Dynamo Operator 1.5.x (needs Grove). "NVIDIA DGX Spark, Jetson and workstations are not supported."
+- Requirements: control plane 10 cores, 12 GB, 110 GB disk; cluster services 10 cores, 20 GB, 50 GB; default StorageClass; shared storage (NFS) recommended for training data; NTP; cluster-admin.
+- Networking: load balancer (MetalLB), an ingress controller (HAProxy in NVIDIA's example) or Gateway API, a control-plane FQDN plus wildcard for workloads and a separate wildcard for Knative inference, TLS per domain (own certificates, `tls.caChainPath` for a private CA, or `generateSelfSigned`).
+- Installer: `install --preflight-only`, `--dry-run`, `-y`; prerequisites and features each `mode: install|skip`; admin user and password are generated (configmap `runai-backend-tenants-manager`, secret `runai-backend-gen-tenants-manager`); uninstall by `helm uninstall runai-cluster -n runai` and `runai-backend -n runai-backend`.
+  Sources: https://docs.nvidia.com/run-ai/self-hosted/documentation/installation-and-configuration/support-matrix, .../system-requirements/infrastructure-requirements, .../system-requirements/networking-setup, .../install/guided-installation/connected-installation/same-cluster-installation, .../install/guided-installation/configuration-reference
+
 ## NVIDIA Dynamo
 
 - Orchestration layer above vLLM, SGLang and TensorRT-LLM: disaggregated prefill/decode, KV-aware routing, KV Block Manager, SLA planner, Grove, fault tolerance; Kubernetes operator with `DynamoGraphDeployment` and zero-config `DynamoGraphDeploymentRequest`. On Kubernetes it needs no etcd or NATS.

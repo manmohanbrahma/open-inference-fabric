@@ -1,0 +1,33 @@
+# runai-installer configuration: open-source Run:ai, control plane and cluster on this one Kubernetes cluster.
+# GPU Operator and Prometheus are installed by oif beforehand, so the installer skips them.
+install:
+  mode: full_installation
+  connectivity: connected
+registry:
+  type: ngc                             # open source: public images, no credentials
+tls:
+  certPath: ${RUNAI_TLS_CERT}
+  keyPath: ${RUNAI_TLS_KEY}
+  caChainPath: ${RUNAI_CA_CERT}
+controlPlane:
+  enabled: true
+  version: "${RUNAI_VERSION}"
+  domain: ${RUNAI_DOMAIN}
+cluster:
+  enabled: true
+  version: "${RUNAI_VERSION}"
+  name: ${RUNAI_CLUSTER_NAME}
+  workloadRouting: host
+prerequisites:
+  gpuOperator:
+    mode: skip
+  prometheus:
+    mode: skip
+  networkOperator:
+    mode: skip
+features:
+  skip: true                            # Knative, LWS, Grove and Dynamo come with Project 2
+externalConnection:
+  type: ingress
+  ingress:
+    className: haproxy

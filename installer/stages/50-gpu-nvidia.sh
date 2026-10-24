@@ -3,7 +3,7 @@
 
 GPU_NS=gpu-operator
 
-register_stage gpu-operator
+register_stage gpu-operator GPU_OPERATOR_VERSION   # a new version in versions.env upgrades it
 register_teardown gpu-operator
 stage_gpu_operator() {
   [ -n "$(nv_targets)" ] || { warn "no NVIDIA GPU: GPU Operator skipped"; return 0; }
@@ -29,7 +29,7 @@ teardown_gpu_operator() {   # chart first so the toolkit undoes its containerd a
   ok "GPU Operator removed"
 }
 
-register_stage gpu-verify
+register_stage gpu-verify GPU_OPERATOR_VERSION
 stage_gpu_verify() {
   [ -n "$(nv_targets)" ] || return 0
   local want n node; want=$(nv_targets | wc -w); node=$(kc get nodes -o jsonpath='{.items[0].metadata.name}')

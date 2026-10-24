@@ -4,7 +4,7 @@ Security requirements from the start, not before release.
 
 ## Secrets
 
-- Secrets (Hugging Face token, NGC API key, Run:ai admin password, Grafana admin password) are read from `.env` at install time and stored only as Kubernetes Secrets. `.env` is untracked.
+- Secrets (Hugging Face token, Run:ai admin password, Grafana admin password) are read from `.env` at install time and stored only as Kubernetes Secrets. `.env` is untracked.
 - Scripts never echo secrets; logs are checked for token patterns in CI.
 - The repository is public: no real IP addresses, host names, user names or tokens in tracked files. CI runs gitleaks on every push.
 
@@ -19,7 +19,8 @@ Security requirements from the start, not before release.
 
 - Every image and chart pinned by version in `versions.env`; image digests recorded with benchmark results.
 - Images come from the publishers' registries (nvcr.io, docker.io/rocm, quay.io, registry.k8s.io, ghcr.io) or are built from Containerfiles in this repo.
-- Downloading the Run:ai Community Product from NGC requires accepting NVIDIA's licence terms; the installer asks for that acceptance explicitly.
+- Open-source Run:ai images and charts are public on NGC (`nvcr.io/nvidia/runai-oss`, `helm.ngc.nvidia.com/nvidia/runai-oss`); no NGC key is needed. The `runai-installer` binary is checked against the SHA-256 published with its GitHub release.
+- TLS for Run:ai uses a private CA created on the host (`/var/lib/oif/pki`, root only); only its public certificate is handed out for browsers to trust.
 
 ## Host
 

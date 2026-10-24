@@ -20,7 +20,7 @@ P1.1: T-101 to T-104 done (guides 1 to 4). Next: spike S-3 then T-105 Run:ai ope
 
 ## Next step
 
-Spike S-3: how the open-source Run:ai installs on single-node kubeadm (requirements: domain/TLS, ingress, database, NGC access, footprint); then T-105.
+S-3/T-105 run on the host: GPU Operator to v26.7.1, kube-prometheus-stack, HAProxy ingress on the first MetalLB address, private CA and certificate for runai.<ip>.sslip.io, Run:ai 3.0.20 (ADR-013, ADR-014). Then the project/quota test.
 
 ## Notes
 

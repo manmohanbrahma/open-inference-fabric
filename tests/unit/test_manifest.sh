@@ -45,4 +45,13 @@ eq "$(cat "$S/etc/lines.conf")" "$(printf 'a\nb')" "added line removed:"
 n=0; stage_counter() { n=$((n + 1)); }
 stage counter; stage counter
 eq "$n" 1 "stage runs once:"
+
+# a stage pinned to a version runs again when the version changes, then once more not at all
+m=0; stage_widget() { m=$((m + 1)); }
+WIDGET_VERSION=v1; register_stage widget WIDGET_VERSION
+touch "$DONE/widget"                      # marker from before the stage was pinned (empty)
+stage widget; eq "$m" 1 "pinned stage runs when its marker has no version:"
+stage widget; eq "$m" 1 "and not again for the same version:"
+WIDGET_VERSION=v2; stage widget; eq "$m" 2 "a new version runs it again:"
+eq "$(cat "$DONE/widget")" v2 "marker holds the version:"
 finish

@@ -75,3 +75,16 @@ Architecture decision records. Change a decision only with a new ADR that supers
 
 - **Date:** 2026-10-24. **Decided by:** project owner.
 - **Decision:** a result is comparable only if the model weights and dtype, Dynamo version, engine version, serving profile, benchmark profile (AIPerf, input and output lengths, concurrency, warm-up, 3 repeats) and the one-GPU-at-a-time rule (ADR-009) are the same. Every report lists versions, image digests, flags, power limits and clocks. TensorRT-LLM results are an NVIDIA-only reference column.
+
+## ADR-013: Run:ai open source through its own installer, on oif-prepared prerequisites
+
+- **Date:** 2026-10-24. **Decided by:** project owner (S-3 plan). **Settles** ADR-005's install method.
+- **Decision:** install Run:ai 3.0 with `runai-installer` (`full_installation`, connected, `registry.type: ngc` without credentials). oif installs what the installer would otherwise install or expects to exist, pinned and reversible: GPU Operator (`mode: skip`), kube-prometheus-stack (`mode: skip`), HAProxy ingress controller, the domain and TLS.
+- **GPU Operator pinned to v26.7.1**, the newest version inside Run:ai 3.0's support matrix (25.10-26.7.1); v26.7.2 was installed first and is downgraded by the version-pinned stage.
+- **Why:** the installer is NVIDIA's recommended path and runs preflight checks; keeping prerequisites in oif keeps every version pinned and the uninstall complete.
+
+## ADR-014: sslip.io domain and a private CA for Run:ai
+
+- **Date:** 2026-10-24. **Decided by:** project owner (no DNS server in the lab).
+- **Decision:** Run:ai's domain defaults to `runai.<first-MetalLB-address-with-dashes>.sslip.io`; sslip.io's public DNS answers any name containing an address with that address, so the domain and its wildcards (`*.runai...`, `*.inference.runai...`) resolve without a DNS server. TLS comes from a private CA created on the host; users import its public certificate once. `RUNAI_DOMAIN` in `.env` replaces sslip.io with an organisation's own domain.
+- **Consequences:** clients and pods need public DNS resolution; the lab address appears in DNS names (not secret, but visible to the public resolver). The CA key never leaves the root-only state folder.

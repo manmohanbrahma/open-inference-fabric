@@ -1,0 +1,32 @@
+# kube-prometheus-stack: Prometheus Operator and CRDs (Run:ai creates its own Prometheus in namespace runai),
+# a cluster Prometheus that picks up every ServiceMonitor (DCGM exporter, Run:ai, Dynamo later), Grafana, Alertmanager.
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 50Gi
+grafana:
+  admin:
+    existingSecret: grafana-admin       # created by oif from GRAFANA_ADMIN_PASSWORD
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    size: 10Gi
+# kubeadm binds these to 127.0.0.1: scraping them from Prometheus would only raise "target down" alerts
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false

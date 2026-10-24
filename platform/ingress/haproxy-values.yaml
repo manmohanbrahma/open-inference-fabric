@@ -1,0 +1,13 @@
+# HAProxy Kubernetes Ingress Controller: the ingress class Run:ai uses, on a fixed MetalLB address that the
+# Run:ai domain resolves to.
+controller:
+  ingressClass: haproxy
+  ingressClassResource:
+    name: haproxy
+    default: false
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.io/loadBalancerIPs: ${INGRESS_IP}
+  config:
+    ssl-redirect-port: "443"            # clients reach HTTPS on 443 through the load balancer

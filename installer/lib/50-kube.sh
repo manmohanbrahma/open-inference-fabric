@@ -42,6 +42,7 @@ PY
 pick_cidr() {   # candidates...: print the first one that does not overlap the host's networks
   local c; for c in "$@"; do cidr_free "$c" 2>/dev/null && { echo "$c"; return 0; }; done; return 1; }
 
-pods_settled() {   # every pod in the cluster Running (and ready) or Succeeded
-  local bad; bad=$(kc get pods -A --no-headers 2>/dev/null | awk '{split($3,r,"/"); if (!(($4=="Running" && r[1]==r[2]) || $4=="Completed")) print $1"/"$2" "$4}')
-  [ -z "$bad" ] && [ -n "$(kc get pods -A --no-headers 2>/dev/null)" ]; }
+pods_settled() {   # [namespace]: every pod (in the namespace, or the cluster) Running and ready, or Succeeded
+  local scope=(-A) out; [ -n "${1:-}" ] && scope=(-n "$1")
+  out=$(kc get pods "${scope[@]}" --no-headers -o 'custom-columns=R:.status.containerStatuses[*].ready,P:.status.phase' 2>/dev/null) || return 1
+  [ -n "$out" ] && ! awk '$2=="Succeeded" {next} $2!="Running" || $1 ~ /false/ || $1=="<none>" {bad=1} END {exit !bad}' <<< "$out"; }

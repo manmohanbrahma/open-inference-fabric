@@ -2,7 +2,7 @@
 # Settings: read from .env (never executed), validated, missing values asked, saved to $CONF (mode 600).
 
 CONFIG_KEYS=(HOST_IP METALLB_RANGE INSTALL_DIR NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS
-             HF_TOKEN NGC_API_KEY RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID)
+             HF_TOKEN RUNAI_DOMAIN RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID)
 
 env_parse() {   # file: print KEY<TAB>VALUE for the known keys; values are data, never evaluated
   python3 - "$1" "${CONFIG_KEYS[@]}" <<'PY'
@@ -98,9 +98,12 @@ v_ip_here() { valid_ip "$1" || { echo "not an IPv4 address"; return 1; }; [ -n "
 v_range() { check_range "$1" "$(host_prefix "$HOST_IP")"; }
 v_dir() { [[ $1 == /* && $1 != / ]] || { echo "give an absolute path (not /)"; return 1; }; }
 v_any() { return 0; }
+v_domain() { [ -z "$1" ] || [[ $1 =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "not a domain name"; return 1; }; }
+first_ip() { echo "${1%%-*}"; }   # first address of a range
+runai_domain() { echo "${RUNAI_DOMAIN:-runai.$(first_ip "$METALLB_RANGE" | tr . -).sslip.io}"; }
 
 CONFIG_CHECKS=(HOST_IP:v_ip_here METALLB_RANGE:v_range INSTALL_DIR:v_dir NVIDIA_GPUS:v_nv AMD_GPUS:v_amd ISOLATE_GPUS:v_iso
-               RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_password GRAFANA_ADMIN_PASSWORD:check_password)
+               RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_password GRAFANA_ADMIN_PASSWORD:check_password)
 config_validate() {   # saved settings still valid on this host (secret values are never printed)
   local kv k f why bad=0
   for kv in "${CONFIG_CHECKS[@]}"; do k=${kv%%:*}; f=${kv#*:}
@@ -146,14 +149,13 @@ config_collect() {   # all questions first; nothing on the host changes here
   valid_or_ask RUNAI_ADMIN_EMAIL "   Run:ai administrator e-mail" "" check_email
   valid_or_ask RUNAI_ADMIN_PASSWORD "   Run:ai administrator password (12+ characters)" "" check_password secret
   valid_or_ask GRAFANA_ADMIN_PASSWORD "   Grafana admin password (12+ characters)" "" check_password secret
-  [ -n "${NGC_API_KEY:-}" ] || NGC_API_KEY=$(ask_secret "   NVIDIA NGC API key (Run:ai images and charts; empty = ask later)")
   [ -n "${HF_TOKEN:-}" ] || HF_TOKEN=$(ask_secret "   Hugging Face token (only for gated models; empty = none)")
   MODEL_ID=${MODEL_ID:-Qwen/Qwen3-0.6B}
 
   echo; echo "${c_b}Summary${c_0}"
   echo "   Host $HOST_IP, user $INSTALL_USER, MetalLB $METALLB_RANGE, data in $INSTALL_DIR"
   echo "   NVIDIA GPUs: ${NVIDIA_GPUS:-all}; AMD GPUs (from 1.2): ${AMD_GPUS:-all supported}; isolated: ${ISOLATE_GPUS:-none}"
-  echo "   Run:ai admin $RUNAI_ADMIN_EMAIL; NGC key $([ -n "$NGC_API_KEY" ] && echo set || echo 'not set'); HF token $([ -n "$HF_TOKEN" ] && echo set || echo 'not set')"
+  echo "   Run:ai admin $RUNAI_ADMIN_EMAIL; HF token $([ -n "$HF_TOKEN" ] && echo set || echo 'not set')"
   echo "   Stages: ${STAGES[*]}"
   REBOOT_OK=no
   local b need=""; for b in "${NV_BDFS[@]}"; do [ "$(drv "$b")" = nvidia ] || need="the NVIDIA driver"; done
