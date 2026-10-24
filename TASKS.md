@@ -20,7 +20,7 @@ Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on 
 
 - [x] T-101 `oif` skeleton: verbs, logging, prompts, state, manifest helpers, `versions.env`
 - [x] T-102 Host preparation: packages, swap, sysctls, containerd, NVIDIA driver from the Ubuntu archive, vfio isolation of the W6400
-- [ ] T-103 kubeadm 1.35 single node, Calico, control-plane taint removed; local-path storage; MetalLB
+- [x] T-103 kubeadm 1.35 single node, Calico, control-plane taint removed; local-path storage; MetalLB
 - [ ] T-104 NVIDIA GPU Operator, default settings (toolkit, device plugin, GFD, DCGM exporter)
 - [ ] T-105 Run:ai open source, default install (control plane, cluster, KAI Scheduler); spike S-3 first decides the install method
 - [ ] T-106 kube-prometheus-stack; DCGM and Run:ai metrics scraped; Fleet and Scheduling dashboards (NVIDIA)

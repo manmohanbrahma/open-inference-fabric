@@ -23,4 +23,7 @@ grep -q "Using token: <redacted>" "$SANDBOX/install.log" || fail "token line red
 grep -qx "  \[ok\] Kubernetes 1.35.9 control plane on 192.0.2.10:6443" "$SANDBOX/install.log" || fail "ordinary line kept"
 grep -qx "after" "$SANDBOX/install.log" || fail "an open writer still appends after redaction (same file)"
 eq "$(echo "sha256:$hash" | redact)" "sha256:<redacted>" "pipe form:"
+printf '  [ok] clean line\n' > "$SANDBOX/clean.log"; before=$(stat -c %y "$SANDBOX/clean.log"); sleep 0.05
+redact_file "$SANDBOX/clean.log"
+eq "$(stat -c %y "$SANDBOX/clean.log")" "$before" "a clean log is not rewritten (tail -f stays quiet):"
 finish

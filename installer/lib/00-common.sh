@@ -24,7 +24,9 @@ yesno() { local a; a=$(ask "$1 (y/n)" "${2:-y}"); [[ $a =~ ^[Yy] ]]; }
 
 # bootstrap tokens (abcdef.0123456789abcdef) and 64-hex keys such as kubeadm's certificate key
 redact() { sed -E 's/\b[a-z0-9]{6}\.[a-z0-9]{16}\b/<redacted>/g; s/\b[0-9a-f]{64}\b/<redacted>/g'; }
-redact_file() { local t; t=$(mktemp); redact < "$1" > "$t" && cat "$t" > "$1"; rm -f "$t"; }   # same inode: open log handles keep working
+redact_file() {   # rewrite only when needed, in the same file so open log handles keep working
+  grep -qE '\b[a-z0-9]{6}\.[a-z0-9]{16}\b|\b[0-9a-f]{64}\b' "$1" || return 0
+  local t; t=$(mktemp); redact < "$1" > "$t" && cat "$t" > "$1"; rm -f "$t"; }
 
 state_init() { mkdir -p "$STATE" "$DONE"; chmod 700 "$STATE"; touch "$MANIFEST" "$LOG"; chmod 644 "$LOG"; }
 
