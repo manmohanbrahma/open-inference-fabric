@@ -1,0 +1,16 @@
+# local configuration and secrets
+.env
+*.env.local
+*.kubeconfig
+kubeconfig*
+
+# run artefacts
+results/raw/
+*.log
+.state/
+
+# tooling
+__pycache__/
+.venv/
+.ruff_cache/
+.DS_Store
