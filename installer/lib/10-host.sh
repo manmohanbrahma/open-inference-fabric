@@ -42,6 +42,34 @@ gpu_table() {
   [ $(( ${#NV_BDFS[@]} + ${#AMD_BDFS[@]} + ${#OTHER_BDFS[@]} )) -gt 0 ] || echo "  no GPUs found"
 }
 
+dns_query() {   # server name: print "rcode <n> <addresses...>" for an A query sent straight to that server (UDP)
+  python3 - "$1" "$2" <<'PY'
+import random, socket, struct, sys
+server, name = sys.argv[1], sys.argv[2]
+tid = random.randint(0, 65535)
+q = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0) + b"".join(bytes([len(p)]) + p.encode() for p in name.strip(".").split(".")) + b"\0" + struct.pack(">HH", 1, 1)
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(5)
+try:
+    s.sendto(q, (server, 53)); d = s.recv(4096)
+except OSError:
+    print("rcode timeout"); sys.exit(0)
+def skip(i):                             # past a (possibly compressed) domain name
+    while d[i]:
+        if d[i] & 0xC0 == 0xC0: return i + 2
+        i += d[i] + 1
+    return i + 1
+rcode, an = d[3] & 0xF, struct.unpack(">H", d[6:8])[0]
+i, ips = skip(12) + 4, []
+for _ in range(an):
+    i = skip(i)
+    typ, _, _, ln = struct.unpack(">HHIH", d[i:i + 10]); i += 10
+    if typ == 1: ips.append(socket.inet_ntoa(d[i:i + ln]))
+    i += ln
+print("rcode", rcode, *ips)
+PY
+}
+host_nameservers() { awk '/^nameserver/ {print $2}' /run/systemd/resolve/resolv.conf 2>/dev/null || awk '/^nameserver/ {print $2}' /etc/resolv.conf; }
+
 reachable() {   # url: any HTTP answer counts (401/404 too); fails on DNS, TLS or connection errors
   python3 - "$1" <<'PY' 2>/dev/null
 import sys, urllib.request, urllib.error
@@ -75,6 +103,11 @@ host_check() {   # read-only: never changes the host
     *) warn "$b on driver '$(drv "$b")'" ;; esac; done
   [ ${#OTHER_BDFS[@]} -gt 0 ] && warn "display-only AMD GPU(s) ${OTHER_BDFS[*]}: oif install isolates them with vfio so Kubernetes cannot claim them (one reboot)"
   swapon --noheadings | grep -q . && warn "swap is on: oif install turns it off for Kubernetes (uninstall turns it back on)"
+  local ns r; for ns in $(host_nameservers); do   # pods use every listed server, not only the one the host prefers
+    r=$(dns_query "$ns" github.com)
+    case $r in "rcode 0 "*) ok "DNS server $ns answers" ;;
+      *) warn "DNS server $ns does not answer (${r#rcode }): pods will see random lookup failures; remove it from the host's network settings"; bad=1 ;; esac
+  done
   local u; for u in https://registry.k8s.io https://nvcr.io https://ghcr.io https://huggingface.co https://archive.ubuntu.com; do
     reachable "$u" && ok "reachable: $u" || { warn "cannot reach $u (proxy or firewall?)"; bad=1; }; done
   for u in kubelet containerd docker k3s rke2-server; do

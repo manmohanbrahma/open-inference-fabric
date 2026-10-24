@@ -1,0 +1,13 @@
+# BEGIN oif runai-dns
+# The Run:ai domain and every name below it resolve to the ingress address inside the cluster, without
+# depending on external DNS (the cluster reaches the control plane through this name).
+${RUNAI_DOMAIN}:53 {
+    errors
+    template IN A {
+        answer "{{ .Name }} 60 IN A ${INGRESS_IP}"
+    }
+    template IN AAAA {
+        rcode NOERROR
+    }
+}
+# END oif runai-dns

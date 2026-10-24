@@ -52,6 +52,23 @@ stage_pki() {   # a private CA (10 years) and one certificate for the Run:ai dom
   ok "certificate for $d and *.$d (CA for browsers: $UHOME/oif-ca.crt)"
 }
 
+register_stage runai-dns
+stage_runai_dns() {   # cluster DNS answers the Run:ai domain itself (pods do not depend on external DNS for it)
+  export RUNAI_DOMAIN INGRESS_IP; RUNAI_DOMAIN=$(runai_domain); INGRESS_IP=$(first_ip "$METALLB_RANGE")
+  local patch dnsip r
+  patch=$(BLOCK=$(render "$OIF_HOME/platform/runai/coredns-block.txt") CUR=$(kc -n kube-system get cm coredns -o jsonpath='{.data.Corefile}') python3 -c '
+import json, os, re
+cur = re.sub(r"# BEGIN oif runai-dns.*?# END oif runai-dns\n?", "", os.environ["CUR"], flags=re.S)
+print(json.dumps({"data": {"Corefile": os.environ["BLOCK"].rstrip("\n") + "\n" + cur}}))') || die "cannot build the CoreDNS configuration"
+  kc -n kube-system patch configmap coredns --type merge -p "$patch" >> "$LOG" || die "CoreDNS configuration rejected"
+  kc -n kube-system rollout restart deploy/coredns >> "$LOG"
+  kc -n kube-system rollout status deploy/coredns --timeout=180s >> "$LOG" || die "CoreDNS did not restart (kubectl -n kube-system logs deploy/coredns)"
+  dnsip=$(kc -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}')
+  r=$(dns_query "$dnsip" "check.$RUNAI_DOMAIN")
+  [ "$r" = "rcode 0 $INGRESS_IP" ] || die "cluster DNS answers '$r' for check.$RUNAI_DOMAIN (expected $INGRESS_IP)"
+  ok "cluster DNS: $RUNAI_DOMAIN and *.$RUNAI_DOMAIN -> $INGRESS_IP"
+}
+
 register_stage runai RUNAI_VERSION
 stage_runai() {
   local bin=$STATE/bin/runai-installer-$RUNAI_VERSION w=$STATE/runai rc=0; mkdir -p "$STATE/bin" "$w"; chmod 700 "$w"
@@ -65,6 +82,8 @@ stage_runai() {
   "$bin" install --config "$w/config.yaml" --kubeconfig "$KCFG" --preflight-only --output text --logs-dir "$w/logs" > "$w/preflight.txt" 2>&1 || rc=$?
   grep -viE 'password|secret|token|key' "$w/preflight.txt" | tail -40 | redact | sed 's/^/    /'
   [ $rc = 0 ] || die "Run:ai preflight failed (sudo less $w/preflight.txt)"
+  # a failed earlier attempt leaves its hook jobs behind; a job with the same name would block the next one
+  kc get namespace runai >/dev/null 2>&1 && kc -n runai delete jobs --field-selector status.successful=0 --ignore-not-found >> "$LOG" 2>&1
   log "Run:ai $RUNAI_VERSION install: control plane and cluster (15-30 min; sudo tail -f $w/logs/runai-installer.log)"
   "$bin" install --config "$w/config.yaml" --kubeconfig "$KCFG" -y --output text --step-timeout 15m --logs-dir "$w/logs" > "$w/install.txt" 2>&1 || rc=$?
   grep -viE 'password|secret|token|key' "$w/install.txt" | tail -40 | redact | sed 's/^/    /'
