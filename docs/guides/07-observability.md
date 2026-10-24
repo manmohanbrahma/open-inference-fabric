@@ -2,6 +2,8 @@
 
 **Steps:** T-112 (recording rules), T-114 (Fleet dashboard), T-106 (Scheduling dashboard). **Tested:** 2026-10-25 on the reference host, with an NVIDIA RTX A6000 and an AMD Radeon PRO W7900.
 
+Published with screenshots as a pair: [Run:ai with NVIDIA and AMD GPUs, Installation Guide](https://manmohanbrahma.github.io/ai/runai-amd/install-guide/) and [Deployment Guide](https://manmohanbrahma.github.io/ai/runai-amd/deployment-guide/).
+
 ## What you get
 
 - **One metric schema for both vendors.** Recording rules turn the DCGM exporter's and the AMD exporter's metrics into `oif:gpu_*` series with the same labels and units. A panel shows both GPUs without any vendor-specific query.

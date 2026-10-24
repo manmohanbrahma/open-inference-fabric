@@ -2,6 +2,8 @@
 
 **Step:** T-111, spike S-2 and T-113. **Tested:** 2026-10-25, AMD GPU Operator v1.5.1 with a Radeon PRO W7900 on the reference host.
 
+Published with screenshots as a pair: [Run:ai with NVIDIA and AMD GPUs, Installation Guide](https://manmohanbrahma.github.io/ai/runai-amd/install-guide/) and [Deployment Guide](https://manmohanbrahma.github.io/ai/runai-amd/deployment-guide/).
+
 ## What you get
 
 - The cluster schedules the AMD GPU as `amd.com/gpu`, next to the NVIDIA GPU's `nvidia.com/gpu`.
