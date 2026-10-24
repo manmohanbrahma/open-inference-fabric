@@ -60,9 +60,8 @@ stage_amd_gpu_verify() {
   sed 's/^/    /' <<< "$out" | tee -a "$TLOG"
   grep -q '/dev/kfd' <<< "$out" && grep -q 'renderD' <<< "$out" || die "the pod did not get the AMD GPU's devices (kubectl -n oif-amd-test describe pod amd)"
   kc delete namespace oif-amd-test --wait=true >> "$LOG" 2>&1 || warn "test namespace oif-amd-test not deleted"
-  ip=$(kc -n "$AMD_NS" get svc -l app.kubernetes.io/name=metrics-exporter -o jsonpath='{.items[0].spec.clusterIP}' 2>/dev/null)
-  [ -n "$ip" ] || ip=$(kc -n "$AMD_NS" get svc -o json | python3 -c 'import json,sys; print(next((s["spec"]["clusterIP"] for s in json.load(sys.stdin)["items"] if "metrics" in s["metadata"]["name"]), ""))')
-  [ -n "$ip" ] || die "AMD metrics exporter service not found (kubectl -n $AMD_NS get svc)"
+  ip=$(kc -n "$AMD_NS" get svc default-metrics-exporter -o jsonpath='{.spec.clusterIP}' 2>/dev/null) || true   # <DeviceConfig>-metrics-exporter
+  [ -n "$ip" ] || die "AMD metrics exporter service default-metrics-exporter not found (kubectl -n $AMD_NS get svc)"
   wait_for "AMD GPU metrics" 180 10 bash -c "curl -fsS -m 10 http://$ip:5000/metrics | grep -q '^gpu_'" || die "no AMD GPU metrics at $ip:5000"
   m=$(curl -fsS -m 10 "http://$ip:5000/metrics" | grep -E '^(gpu_edge_temperature|gpu_junction_temperature|gpu_power_usage|gpu_used_vram|gpu_total_vram|gpu_health)\{' \
     | sed -E 's/\{[^}]*\}//' | awk '{printf "%s=%s ", $1, $2}')
