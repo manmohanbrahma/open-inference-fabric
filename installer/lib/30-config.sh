@@ -76,6 +76,11 @@ v_iso() { local b; gpu_vendor_check "$1" 1002 AMD || return 1; [ "$1" = none ] &
   done; return 0; }
 check_email() { [[ $1 =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || { echo "not an e-mail address"; return 1; }; }
 check_password() { [ ${#1} -ge 12 ] || { echo "use at least 12 characters"; return 1; }; }
+check_runai_password() {   # Run:ai's policy on top: upper and lower case, a digit and one of - ! @ # $ % ^ & * ( ) _ + =
+  check_password "$1" || return 1
+  local sym='[-!@#$%^&*()_+=]'
+  [[ $1 =~ [A-Z] && $1 =~ [a-z] && $1 =~ [0-9] && $1 =~ $sym ]] \
+    || { echo "Run:ai needs an upper-case and a lower-case letter, a digit and one of - ! @ # \$ % ^ & * ( ) _ + ="; return 1; }; }
 
 # ask until valid: VAR question default validator [secret]
 ask_valid() { local var=$1 q=$2 def=$3 fn=$4 secret=${5:-} v why n=0
@@ -103,7 +108,7 @@ first_ip() { echo "${1%%-*}"; }   # first address of a range
 runai_domain() { echo "${RUNAI_DOMAIN:-runai.$(first_ip "$METALLB_RANGE" | tr . -).sslip.io}"; }
 
 CONFIG_CHECKS=(HOST_IP:v_ip_here METALLB_RANGE:v_range INSTALL_DIR:v_dir NVIDIA_GPUS:v_nv AMD_GPUS:v_amd ISOLATE_GPUS:v_iso
-               RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_password GRAFANA_ADMIN_PASSWORD:check_password)
+               RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_runai_password GRAFANA_ADMIN_PASSWORD:check_password)
 config_validate() {   # saved settings still valid on this host (secret values are never printed)
   local kv k f why bad=0
   for kv in "${CONFIG_CHECKS[@]}"; do k=${kv%%:*}; f=${kv#*:}
@@ -147,7 +152,7 @@ config_collect() {   # all questions first; nothing on the host changes here
 
   echo; echo "${c_b}Accounts and tokens${c_0} (stored only in $CONF, mode 600, and later as Kubernetes Secrets)"
   valid_or_ask RUNAI_ADMIN_EMAIL "   Run:ai administrator e-mail" "" check_email
-  valid_or_ask RUNAI_ADMIN_PASSWORD "   Run:ai administrator password (12+ characters)" "" check_password secret
+  valid_or_ask RUNAI_ADMIN_PASSWORD "   Run:ai administrator password (12+ characters: upper and lower case, a digit, a symbol)" "" check_runai_password secret
   valid_or_ask GRAFANA_ADMIN_PASSWORD "   Grafana admin password (12+ characters)" "" check_password secret
   [ -n "${HF_TOKEN:-}" ] || HF_TOKEN=$(ask_secret "   Hugging Face token (only for gated models; empty = none)")
   MODEL_ID=${MODEL_ID:-Qwen/Qwen3-0.6B}

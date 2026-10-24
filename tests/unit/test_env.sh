@@ -42,6 +42,10 @@ ok_ check_email admin@example.com
 no_ check_email admin
 ok_ check_password abcdefghijkl
 no_ check_password short
+ok_ check_runai_password Abcdefgh123!
+no_ check_runai_password abcdefghijkl
+no_ check_runai_password Abcdefghijkl1
+no_ check_runai_password Abc1!
 ok_ check_bdfs ""
 ok_ check_bdfs none
 no_ check_bdfs c8:00.0
