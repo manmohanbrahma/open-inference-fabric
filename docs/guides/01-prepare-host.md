@@ -138,7 +138,7 @@ Values may be quoted. The file is read as data, never run as a script. Anything 
 | `sudo ./oif plan` | No | Preview of what uninstall would remove and keep |
 | `sudo ./oif uninstall` | Yes | Reverses every recorded change; asks you to type `wipe` |
 
-In this version `oif install` runs only the **preflight** stage: it saves the settings and creates the data folder. The next guides add the stages that build the platform.
+`oif install` saves the settings, creates the data folder and then runs the stages described in the next guides, starting with [host preparation](02-host-preparation.md).
 
 ## What changed on the host
 

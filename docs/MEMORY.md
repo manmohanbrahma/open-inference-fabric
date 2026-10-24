@@ -6,7 +6,7 @@ Current state of the project. Update after every task.
 
 - Phase 0: research and project documents written (T-001). Repository public at github.com/manmohanbrahma/open-inference-fabric (T-002).
 - Reference host: clean Ubuntu 26.04.1 after the previous NKP + NAI lab was uninstalled on 2026-10-24. A6000 on nouveau (no NVIDIA driver yet), W7900 and W6400 on amdgpu (no vfio yet).
-- Nothing of OIF is installed yet.
+- T-102 installed on 2026-10-24: NVIDIA 595.91.07 (CUDA 13.2) on the A6000, W6400 on vfio-pci, swap off, containerd 2.2.2 with data in the data folder. W7900 untouched (amdgpu).
 
 ## Plan
 
@@ -14,16 +14,17 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 done (`oif` command line, settings, manifest and uninstall engine, host check, unit tests, guide 1). Next: T-102 host preparation.
+P1.1: T-101 and T-102 done (guides 1 and 2). Next: T-103 Kubernetes.
 
 ## Next step
 
-T-102 host preparation (NVIDIA driver from the Ubuntu archive, swap, kernel settings, containerd, vfio for the W6400; one reboot asked first), then T-103, T-104 and spike S-3.
+T-103: kubeadm 1.35 single node, Calico, local-path storage, MetalLB; then T-104 NVIDIA GPU Operator (host driver, so driver.enabled=false) and spike S-3.
 
 ## Notes
 
 - The reference host has no `curl` or `git` out of the box; oif uses Python and `wget`.
 - `sudo` on the reference host needs a password: the owner runs `sudo ./oif ...`; read-only `./oif check` needs no sudo.
+- First real run: an AMD GPU was accepted under NVIDIA_GPUS (only the address was checked); fixed with vendor checks, saved-settings validation and `install --reconfigure`.
 - Every step ships with a guide in `docs/guides/` (owner's rule, 2026-10-24).
 
 ## Known issues and risks
