@@ -4,7 +4,7 @@ Current state of the project. Update after every task.
 
 ## Status (2026-10-24)
 
-- Phase 0: research and project documents written (T-001). Repository not yet on GitHub (T-002).
+- Phase 0: research and project documents written (T-001). Repository public at github.com/manmohanbrahma/open-inference-fabric (T-002).
 - Reference host: clean Ubuntu 26.04.1 after the previous NKP + NAI lab was uninstalled on 2026-10-24. A6000 on nouveau (no NVIDIA driver yet), W7900 and W6400 on amdgpu (no vfio yet).
 - Nothing of OIF is installed yet.
 
@@ -14,7 +14,7 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-T-002: create the public GitHub repository and push.
+P1.1: T-101 (`oif` skeleton) and spike S-3, plan awaiting owner approval.
 
 ## Next step
 
