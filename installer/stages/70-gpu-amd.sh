@@ -109,6 +109,22 @@ stage_amd_quota() {   # S-2: Run:ai quotas count amd.com/gpu (team-a quota 1 run
   ok "S-2 passed: Run:ai enforces quotas on amd.com/gpu"
 }
 
+# the templates stage reruns when a template file or a pinned image changes
+AMD_TEMPLATES_REV=$(cat "$OIF_HOME"/platform/runai/templates/*.json 2>/dev/null | { cat; echo "$ROCM_PYTORCH_IMAGE $JUPYTERLAB_VERSION"; } | sha256sum | cut -c1-12)
+
+register_stage runai-amd-templates AMD_TEMPLATES_REV
+stage_runai_amd_templates() {   # T-115: Run:ai workload templates on amd.com/gpu (extendedResources), next to Run:ai's NVIDIA ones
+  [ -n "$(amd_targets)" ] || return 0
+  local f out tmp; tmp=$(mktemp)
+  export ROCM_PYTORCH_IMAGE JUPYTERLAB_VERSION
+  for f in "$OIF_HOME"/platform/runai/templates/*.json; do
+    render "$f" > "$tmp" || { rm -f "$tmp"; die "cannot render $f"; }
+    out=$(runai_api template "$tmp" 2>&1) || { rm -f "$tmp"; die "Run:ai template from ${f##*/}: $out"; }
+    ok "$out"
+  done
+  rm -f "$tmp"
+}
+
 register_stage vendor-quota
 stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped at 1 NVIDIA + 1 AMD by a Kubernetes ResourceQuota
   local alloc c out

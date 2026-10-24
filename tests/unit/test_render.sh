@@ -19,4 +19,11 @@ for t in "$ROOT"/platform/*/*.yaml; do
   grep -qE '\$\{[A-Z_]+\}' <<< "$out" && fail "placeholder left in $t"
   [ -n "$out" ] || fail "empty output for $t"
 done
+export ROCM_PYTORCH_IMAGE JUPYTERLAB_VERSION
+for t in "$ROOT"/platform/runai/templates/*.json; do   # Run:ai templates: rendered, valid JSON with kind, meta.name and an AMD GPU
+  out=$(render "$t") || { fail "render $t"; continue; }
+  grep -qE '\$\{[A-Z_]+\}' <<< "$out" && fail "placeholder left in $t"
+  python3 -c 'import json,sys; t=json.load(sys.stdin); assert t["kind"] in ("trainings","workspaces") and t["meta"]["name"]
+assert {"resource": "amd.com/gpu", "quantity": "1"} in t["spec"]["compute"]["extendedResources"]' <<< "$out" || fail "invalid template $t"
+done
 finish

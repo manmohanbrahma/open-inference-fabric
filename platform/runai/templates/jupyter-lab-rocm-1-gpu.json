@@ -1,0 +1,19 @@
+{
+  "kind": "workspaces",
+  "meta": {
+    "name": "jupyter-lab-rocm-1-gpu",
+    "description": "Jupyter Lab with PyTorch on ROCm / 1 AMD GPU (oif)",
+    "scopeType": "tenant"
+  },
+  "spec": {
+    "image": "${ROCM_PYTORCH_IMAGE}",
+    "imagePullPolicy": "IfNotPresent",
+    "command": "bash",
+    "args": "-c \"python3 -m pip install --quiet --break-system-packages jupyterlab==${JUPYTERLAB_VERSION} && exec python3 -m jupyterlab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --ServerApp.token='' --ServerApp.allow_remote_access=true\"",
+    "compute": {
+      "extendedResources": [{"resource": "amd.com/gpu", "quantity": "1"}]
+    },
+    "exposedUrls": [{"container": 8888, "toolType": "jupyter-notebook", "toolName": "Jupyter"}],
+    "security": {"uidGidSource": "fromTheImage"}
+  }
+}

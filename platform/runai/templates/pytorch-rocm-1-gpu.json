@@ -1,0 +1,18 @@
+{
+  "kind": "trainings",
+  "meta": {
+    "name": "pytorch-rocm-1-gpu",
+    "description": "PyTorch on ROCm / 1 AMD GPU (oif)",
+    "scopeType": "tenant"
+  },
+  "spec": {
+    "image": "${ROCM_PYTORCH_IMAGE}",
+    "imagePullPolicy": "IfNotPresent",
+    "command": "python3",
+    "args": "-c \"import torch; print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'GPU not detected')\"",
+    "compute": {
+      "extendedResources": [{"resource": "amd.com/gpu", "quantity": "1"}]
+    },
+    "security": {"uidGidSource": "fromTheImage"}
+  }
+}

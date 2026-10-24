@@ -6,6 +6,8 @@ never printed. Commands:
   check                                  log in and print the clusters
   project NAME GPU_DESERVED GPU_LIMIT    create the project if missing (GPU_LIMIT -1 = no limit), print its namespace
   admin EMAIL                            make EMAIL a System administrator with the password in RUNAI_NEW_PASSWORD
+  template FILE                          create or update the workload template in FILE (JSON)
+  submit KIND NAME PROJECT TEMPLATE [COMMAND [ARGS]]  submit a training or workspace (KIND trainings, workspaces) from a template
 """
 import json
 import os
@@ -158,6 +160,47 @@ def admin(token: str, email: str) -> None:
     sys.exit(f"{email} does not log in with the configured password")
 
 
+def template(token: str, path: str) -> None:
+    """Create or update a workload template from a JSON file {"kind": "trainings"|"workspaces", "meta": ..., "spec": ...}."""
+    with open(path, encoding="utf-8") as f:
+        t = json.load(f)
+    kind, name = t.pop("kind"), t["meta"]["name"]
+    status, out = call("GET", "/api/v1/workload-templates", token=token)
+    if status != 200:
+        sys.exit(f"GET templates: HTTP {status} {out}")
+    found = next((e for e in out.get("entries", []) if e["meta"]["name"] == name), None)
+    if found:
+        status, out = call("PUT", f"/api/v1/workload-templates/{kind}/{found['meta']['id']}", t, token)
+        verb = "updated"
+    else:
+        status, out = call("POST", f"/api/v1/workload-templates/{kind}", t, token)
+        verb = "created"
+    if status not in (200, 201, 202):
+        sys.exit(f"template {name}: HTTP {status} {out}")
+    print(f"template {name} {verb}")
+
+
+def submit(token: str, kind: str, name: str, project_name: str, template_name: str, command: str = "", args: str = "") -> None:
+    """Submit a workload (kind: trainings or workspaces) from a template, optionally with another command."""
+    status, out = call("GET", "/api/v1/org-unit/projects", token=token)
+    proj = next((p for p in out.get("projects", []) if p.get("name") == project_name), None) if status == 200 else None
+    if not proj:
+        sys.exit(f"project {project_name} not found")
+    status, out = call("GET", "/api/v1/workload-templates", token=token)
+    tmpl = next((e for e in out.get("entries", []) if e["meta"]["name"] == template_name), None) if status == 200 else None
+    if not tmpl:
+        sys.exit(f"template {template_name} not found")
+    body = {"name": name, "projectId": str(proj["id"]), "clusterId": proj["clusterId"], "templateId": tmpl["meta"]["id"], "spec": {}}
+    if command:
+        body["spec"]["command"] = command
+    if args:
+        body["spec"]["args"] = args
+    status, out = call("POST", f"/api/v1/workloads/{kind}", body, token)
+    if status not in (200, 201, 202):
+        sys.exit(f"submit {name}: HTTP {status} {out}")
+    print(f"{kind[:-1]} {name} submitted in project {project_name} from template {template_name}")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     token = login()
@@ -168,6 +211,10 @@ def main() -> None:
         project(token, sys.argv[2], float(sys.argv[3]), float(sys.argv[4]))
     elif cmd == "admin" and len(sys.argv) == 3:
         admin(token, sys.argv[2])
+    elif cmd == "template" and len(sys.argv) == 3:
+        template(token, sys.argv[2])
+    elif cmd == "submit" and 6 <= len(sys.argv) <= 8:
+        submit(token, *sys.argv[2:])
     else:
         sys.exit(__doc__)
 
