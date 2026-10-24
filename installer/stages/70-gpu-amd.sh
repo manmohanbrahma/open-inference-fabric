@@ -5,17 +5,19 @@
 AMD_NS=kube-amd-gpu
 AMD_WORKSTATION_IDS="7448 744a 745e"     # Radeon PRO W7900 / W7900 dual slot / W7800: kernel 7.0 phantom UMC ECC errors
 AMD_ECC_UMC_THRESHOLD=4000000000
-AMD_GPU_OPERATOR_REV=$AMD_GPU_OPERATOR_VERSION-r2   # bump the suffix when platform/gpu-amd/ changes: reruns the stages
+AMD_GPU_OPERATOR_REV=$AMD_GPU_OPERATOR_VERSION-r3   # bump the suffix when platform/gpu-amd/ changes: reruns the stages
 
 amd_targets() { discover_gpus; if [ -n "${AMD_GPUS:-}" ]; then echo "${AMD_GPUS//,/ }"; else echo "${AMD_BDFS[*]}"; fi; }
 
 register_stage amd-gpu-operator AMD_GPU_OPERATOR_REV
+register_teardown amd-gpu-operator
 stage_amd_gpu_operator() {
   local b t chart ws=""; t=$(amd_targets)
   [ -n "$t" ] || { warn "no AMD compute GPU: AMD GPU Operator skipped"; return 0; }
   for b in $t; do [ "$(drv "$b")" = amdgpu ] || die "$b is on driver '$(drv "$b")', not amdgpu"
     [[ " $AMD_WORKSTATION_IDS " == *" $(pci_ids "$b" | cut -d: -f2) "* ]] && ws=yes; done
   [ -e /dev/kfd ] || die "/dev/kfd is missing: the amdgpu driver did not enable compute"
+  rec "TEARDOWN amd-gpu-operator"
   chart=$STATE/charts/gpu-operator-charts-$AMD_GPU_OPERATOR_VERSION.tgz; mkdir -p "$STATE/charts"
   [ -s "$chart" ] || fetch_pinned "https://rocm.github.io/gpu-operator/charts/gpu-operator-charts-$AMD_GPU_OPERATOR_VERSION.tgz" "$AMD_GPU_OPERATOR_SHA256" "$chart"
   kc create namespace "$AMD_NS" --dry-run=client -o yaml | kc apply -f - >> "$LOG"
@@ -40,6 +42,15 @@ stage_amd_gpu_operator() {
          die "AMD device plugin not running (kubectl -n $AMD_NS logs deploy/amd-gpu-operator-gpu-operator-charts-controller-manager)"; }
   wait_for "AMD GPU Operator pods running" 600 10 pods_settled "$AMD_NS" \
     || { kc -n "$AMD_NS" get pods | grep -vE 'Running|Completed' | tee -a "$TLOG"; die "AMD GPU Operator pods not running"; }
+}
+
+teardown_amd_gpu_operator() {   # chart first (its pre-delete hook removes the DeviceConfig and the operands); then host leftovers
+  if kc get --raw /readyz >/dev/null 2>&1; then
+    hl uninstall amd-gpu-operator -n "$AMD_NS" --wait --timeout 5m >> "$LOG" 2>&1 || warn "helm uninstall amd-gpu-operator did not finish"
+  fi
+  # seen on the reference host: the exporter's health binary and gRPC socket, and its runtime folder
+  rm -rf /var/lib/amd-metrics-exporter /var/run/exporter 2>/dev/null || true
+  ok "AMD GPU Operator removed"
 }
 
 register_stage amd-gpu-verify AMD_GPU_OPERATOR_REV
