@@ -242,8 +242,8 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
     RUNAI_VERSION=$RUNAI_VERSION RUNAI_SOURCE_SHA256=$RUNAI_SOURCE_SHA256 CRANE_VERSION=$CRANE_VERSION CRANE_SHA256=$CRANE_SHA256 \
     RUNAI_BUILD_SRC=$STATE/build/src RUNAI_BUILD_CACHE=$STATE/build/cache \
     render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
-  log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min)"
-  wait_for "$comp build finished" 2400 15 bash -c \
+  log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min; longer on a slow link)"
+  wait_for "$comp build finished" 14400 15   # 4 h ceiling: a slow link; the Job fails on its own errors bash -c \
     "kubectl --kubeconfig $KCFG -n oif-build get job runai-patch-$comp -o jsonpath='{.status.conditions[*].type}' | grep -qE 'Complete|Failed'" || true
   kc -n oif-build logs "job/runai-patch-$comp" 2>&1 | grep -E '^(==|ok|FAIL|---| *Tests|.*passed|.*failed)' | sed 's/^/    /' | tee -a "$TLOG"
   [ "$(kc -n oif-build get job "runai-patch-$comp" -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/$comp.tar" ] \
