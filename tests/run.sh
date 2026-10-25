@@ -9,7 +9,7 @@ fail=0
 if [ "${1:-}" != unit ]; then
   if command -v shellcheck >/dev/null; then
     echo "== shellcheck"
-    shellcheck -x -S warning oif installer/lib/*.sh installer/stages/*.sh tests/*.sh tests/unit/*.sh tests/host/*.sh && echo "   ok" || fail=1
+    shellcheck -x -S warning oif installer/lib/*.sh installer/stages/*.sh tests/*.sh tests/unit/*.sh tests/host/*.sh tests/lab/*.sh && echo "   ok" || fail=1
   else
     echo "== shellcheck not installed: skipped (CI runs it)"
   fi

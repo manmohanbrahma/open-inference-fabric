@@ -45,7 +45,8 @@ v_yesno() { case "$1" in yes|no) ;; *) echo "answer yes or no"; return 1 ;; esac
 
 # ---------------------------------------------------------------- SSH with the cluster key
 NODE_SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR
-               -o IdentitiesOnly=yes -o IdentityAgent=none)   # only oif's own key, never a forwarded agent's
+               -o IdentitiesOnly=yes -o IdentityAgent=none     # only oif's own key, never a forwarded agent's
+               -o ServerAliveInterval=5 -o ServerAliveCountMax=3)   # a node that goes down mid-call (reboot) fails the call
 node_ssh() {   # address command...: run on a node as the node user (the command uses sudo itself)
   # stdin is not read (-n), so loops over the node list keep theirs; NODE_SSH_STDIN=1 passes stdin to the node
   local a=$1 no_stdin=(-n); shift; [ "${NODE_SSH_STDIN:-0}" = 1 ] && no_stdin=()
@@ -130,7 +131,7 @@ node_install() {   # name address: node stages until done, rebooting the node wh
     log "$name: rebooting it for its GPU driver"
     node_ssh "$addr" 'sudo systemctl reboot' >/dev/null 2>&1 || true
     wait_for "$name back after the reboot" 600 10 bash -c \
-      "b=\$(ssh -n -i '$CLUSTER_KEY' -o BatchMode=yes -o ConnectTimeout=5 -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile='$STATE/ssh/known_hosts' -o LogLevel=ERROR '$(node_user)@$addr' cat /proc/sys/kernel/random/boot_id) && [ -n \"\$b\" ] && [ \"\$b\" != '$boot' ]" \
+      "b=\$(ssh -n -i '$CLUSTER_KEY' -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile='$STATE/ssh/known_hosts' -o LogLevel=ERROR '$(node_user)@$addr' cat /proc/sys/kernel/random/boot_id) && [ -n \"\$b\" ] && [ \"\$b\" != '$boot' ]" \
       || die "$name did not come back after the reboot"
   done
 }

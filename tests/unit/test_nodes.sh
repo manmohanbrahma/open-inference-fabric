@@ -58,6 +58,7 @@ ssh() { printf '%s\n' "$*"; }
 a=$(node_ssh 192.168.120.12 true)
 case " $a " in *" -n "*) ;; *) fail "node_ssh must not read stdin: $a" ;; esac
 case $a in *IdentitiesOnly=yes*IdentityAgent=none*) ;; *) fail "node_ssh must not use an agent: $a" ;; esac
+case $a in *ServerAliveInterval=*) ;; *) fail "node_ssh needs keepalives (a node going down mid-call hung the caller): $a" ;; esac
 a=$(NODE_SSH_STDIN=1 node_ssh 192.168.120.12 true)
 case " $a " in *" -n "*) fail "NODE_SSH_STDIN=1 must pass stdin" ;; esac
 seen=$(while read -r -u 3 name addr role; do node_ssh "$addr" true >/dev/null; echo "$name"; done 3< <(other_nodes) | paste -sd' ')
