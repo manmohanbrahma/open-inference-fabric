@@ -44,10 +44,12 @@ v_vip() {   # the API address of a highly available control plane: free, on the 
 v_yesno() { case "$1" in yes|no) ;; *) echo "answer yes or no"; return 1 ;; esac; }
 
 # ---------------------------------------------------------------- SSH with the cluster key
+NODE_SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR
+               -o IdentitiesOnly=yes -o IdentityAgent=none)   # only oif's own key, never a forwarded agent's
 node_ssh() {   # address command...: run on a node as the node user (the command uses sudo itself)
-  local a=$1; shift
-  ssh -i "$CLUSTER_KEY" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
-    -o UserKnownHostsFile="$STATE/ssh/known_hosts" -o LogLevel=ERROR "$(node_user)@$a" "$@"
+  # stdin is not read (-n), so loops over the node list keep theirs; NODE_SSH_STDIN=1 passes stdin to the node
+  local a=$1 no_stdin=(-n); shift; [ "${NODE_SSH_STDIN:-0}" = 1 ] && no_stdin=()
+  ssh "${no_stdin[@]}" -i "$CLUSTER_KEY" "${NODE_SSH_OPTS[@]}" -o UserKnownHostsFile="$STATE/ssh/known_hosts" "$(node_user)@$a" "$@"
 }
 node_ok() { node_ssh "$1" 'sudo -n true' >/dev/null 2>&1; }   # reachable with the cluster key, sudo without a password
 
@@ -65,12 +67,12 @@ nodes_prepare() {
   cluster_key_init
   local name addr role pub missing=() agent=${SSH_AUTH_SOCK:-}
   pub=$(cat "$CLUSTER_KEY.pub")
-  while read -r name addr role; do
+  while read -r -u 3 name addr role; do   # the node list on fd 3: nothing in the loop can read it away
     if node_ok "$addr"; then ok "$name ($addr, $role): reachable with the cluster key"; continue; fi
     if [ -S "$agent" ] && admin_ssh "$addr" "$(authorized_add "$pub")" && node_ok "$addr"; then
       rec "NODEKEY $addr $(node_user)"; ok "$name ($addr): cluster key installed through your SSH agent"; continue; fi
     missing+=("$name=$addr")
-  done < <(other_nodes)
+  done 3< <(other_nodes)
   if [ ${#missing[@]} -gt 0 ]; then
     warn "no access yet to: ${missing[*]}"
     echo "   oif installs its own key on each node once, using your access. Either log in to this node with your"
@@ -82,7 +84,7 @@ nodes_prepare() {
   admin_key_control
 }
 admin_ssh() {   # address command: as the admin, with the admin's forwarded agent (only during the questions)
-  ssh -o BatchMode=yes -o ConnectTimeout=10 -o IdentityAgent="$SSH_AUTH_SOCK" -o StrictHostKeyChecking=accept-new \
+  ssh -n -o BatchMode=yes -o ConnectTimeout=10 -o IdentityAgent="$SSH_AUTH_SOCK" -o StrictHostKeyChecking=accept-new \
     -o UserKnownHostsFile="$STATE/ssh/known_hosts" -o LogLevel=ERROR "$(node_user)@$1" "$2"; }
 authorized_add() {   # key line -> remote shell that adds it to the user's authorized_keys once
   printf 'umask 077; mkdir -p ~/.ssh; grep -qxF %q ~/.ssh/authorized_keys 2>/dev/null || echo %q >> ~/.ssh/authorized_keys' "$1" "$1"; }
@@ -94,19 +96,19 @@ admin_key_control() {   # the admin's choice: their public key(s) on the other c
   keys=$({ [ -S "${SSH_AUTH_SOCK:-}" ] && SSH_AUTH_SOCK=$SSH_AUTH_SOCK ssh-add -L 2>/dev/null; } | grep -E '^(ssh-|ecdsa-|sk-)' || true)
   [ -n "$keys" ] || keys=$(grep -E '^(ssh-|ecdsa-|sk-)' "$UHOME/.ssh/authorized_keys" 2>/dev/null || true)
   [ -n "$keys" ] || { warn "admin key: none found (forwarded agent or ~/.ssh/authorized_keys): not added"; return 0; }
-  while read -r name addr role; do [ "$role" = control ] || continue
-    while read -r k; do
+  while read -r -u 3 name addr role; do [ "$role" = control ] || continue
+    while read -r -u 4 k; do
       node_ssh "$addr" "grep -qxF $(printf %q "$k") ~/.ssh/authorized_keys 2>/dev/null" && continue
       node_ssh "$addr" "$(authorized_add "$k")" && rec "ADMINKEY $addr $k" && n=$((n + 1))
-    done <<< "$keys"
-  done < <(other_nodes)
+    done 4<<< "$keys"
+  done 3< <(other_nodes)
   ok "admin key on the control-plane nodes ($n added; keys already there are left as they are)"
 }
 
 # ---------------------------------------------------------------- running the node stages on another node
 node_push() {   # address: copy this oif (without settings, .git or test caches) to the node
   tar -C "$OIF_HOME" --exclude=.git --exclude=.env --exclude=tests/.cache -czf - . \
-    | node_ssh "$1" "sudo mkdir -p $NODE_SRC && sudo tar -xzf - -C $NODE_SRC && sudo chown -R root:root $NODE_SRC" \
+    | NODE_SSH_STDIN=1 node_ssh "$1" "sudo mkdir -p $NODE_SRC && sudo tar -xzf - -C $NODE_SRC && sudo chown -R root:root $NODE_SRC" \
     || die "cannot copy oif to $1"
 }
 node_settings() {   # what a node needs: its share of the settings, never the cluster's secrets
@@ -120,7 +122,7 @@ node_install() {   # name address: node stages until done, rebooting the node wh
   rec "NODE $addr $name"
   while :; do
     node_push "$addr"
-    rc=0; node_settings | node_ssh "$addr" "sudo $NODE_SRC/oif _node" 2>&1 | sed -u "s/^/  [$name] /" | tee -a "$TLOG" || rc=${PIPESTATUS[1]}
+    rc=0; node_settings | NODE_SSH_STDIN=1 node_ssh "$addr" "sudo $NODE_SRC/oif _node" 2>&1 | sed -u "s/^/  [$name] /" | tee -a "$TLOG" || rc=${PIPESTATUS[1]}
     [ "$rc" = 0 ] && { ok "$name: node stages done"; return 0; }
     [ "$rc" = "$NODE_REBOOT_RC" ] || die "$name: node stages failed (exit $rc; on the node: sudo tail -50 $LOG)"
     n=$((n + 1)); [ $n -le 2 ] || die "$name: still asks for a reboot after two"
@@ -128,7 +130,7 @@ node_install() {   # name address: node stages until done, rebooting the node wh
     log "$name: rebooting it for its GPU driver"
     node_ssh "$addr" 'sudo systemctl reboot' >/dev/null 2>&1 || true
     wait_for "$name back after the reboot" 600 10 bash -c \
-      "b=\$(ssh -i '$CLUSTER_KEY' -o BatchMode=yes -o ConnectTimeout=5 -o UserKnownHostsFile='$STATE/ssh/known_hosts' -o LogLevel=ERROR '$(node_user)@$addr' cat /proc/sys/kernel/random/boot_id) && [ -n \"\$b\" ] && [ \"\$b\" != '$boot' ]" \
+      "b=\$(ssh -n -i '$CLUSTER_KEY' -o BatchMode=yes -o ConnectTimeout=5 -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile='$STATE/ssh/known_hosts' -o LogLevel=ERROR '$(node_user)@$addr' cat /proc/sys/kernel/random/boot_id) && [ -n \"\$b\" ] && [ \"\$b\" != '$boot' ]" \
       || die "$name did not come back after the reboot"
   done
 }
@@ -137,9 +139,9 @@ node_install() {   # name address: node stages until done, rebooting the node wh
 stage_nodes() {   # the node stages on every other node, before the cluster is formed (registered in 40-kubernetes.sh)
   multi_node || { ok "single node"; return 0; }
   local name addr role
-  while read -r name addr role; do node_ok "$addr" || die "$name ($addr) is not reachable with the cluster key: run 'sudo $SELF install --reconfigure' in a terminal"
-  done < <(other_nodes)
-  while read -r name addr role; do log "node $name ($addr, $role)"; node_install "$name" "$addr"; done < <(other_nodes)
+  while read -r -u 3 name addr role; do node_ok "$addr" || die "$name ($addr) is not reachable with the cluster key: run 'sudo $SELF install --reconfigure' in a terminal"
+  done 3< <(other_nodes)
+  while read -r -u 3 name addr role; do log "node $name ($addr, $role)"; node_install "$name" "$addr"; done 3< <(other_nodes)
 }
 
 node_worker() {   # on a node: settings on stdin, then the node stages; exit NODE_REBOOT_RC when a reboot is due

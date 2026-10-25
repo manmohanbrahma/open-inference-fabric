@@ -52,6 +52,18 @@ eq "$(grep -cxF "$K" "$H/.ssh/authorized_keys")" 1 "key added once:"
 HOME=$H bash -c "$(authorized_del "$K")"
 eq "$(cat "$H/.ssh/authorized_keys")" "ssh-ed25519 AAAAadmin admin@pc" "only oif's key removed:"
 
+# oif's SSH uses only its own key (a forwarded agent made a node look ready before the key was on it) and does not read
+# stdin unless asked (ssh read the rest of the node list, so only the first node was checked)
+ssh() { printf '%s\n' "$*"; }
+a=$(node_ssh 192.168.120.12 true)
+case " $a " in *" -n "*) ;; *) fail "node_ssh must not read stdin: $a" ;; esac
+case $a in *IdentitiesOnly=yes*IdentityAgent=none*) ;; *) fail "node_ssh must not use an agent: $a" ;; esac
+a=$(NODE_SSH_STDIN=1 node_ssh 192.168.120.12 true)
+case " $a " in *" -n "*) fail "NODE_SSH_STDIN=1 must pass stdin" ;; esac
+seen=$(while read -r -u 3 name addr role; do node_ssh "$addr" true >/dev/null; echo "$name"; done 3< <(other_nodes) | paste -sd' ')
+eq "$seen" "cp2 cp3 gpu-amd gpu-nvidia" "every node visited in a loop:"
+unset -f ssh
+
 # the runner: a node that asks for a reboot once, then finishes
 CALLS=$SANDBOX/calls; : > "$CALLS"; RUNS=$SANDBOX/runs; : > "$RUNS"   # the stub runs in a pipeline: count in a file
 node_push() { echo "push $1" >> "$CALLS"; }

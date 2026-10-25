@@ -11,11 +11,11 @@ status() {
   local s; echo "Stages:"
   for s in "${STAGES[@]}"; do if done_ "$s"; then echo "  [x] $s"; else echo "  [ ] $s"; fi; done
   if multi_node; then local name addr role; echo "Nodes (this host first):"
-    while read -r name addr role; do
+    while read -r -u 3 name addr role; do
       if [ "$name" = "$(nodes_list | head -1 | cut -d' ' -f1)" ]; then echo "  $name $addr $role: this host"
       elif [ -f "$CLUSTER_KEY" ] && node_ok "$addr"; then echo "  $name $addr $role: reachable with the cluster key"
       else echo "  $name $addr $role: not reachable with the cluster key"; fi
-    done < <(nodes_list); fi
+    done 3< <(nodes_list); fi
   if [ -s "$MANIFEST" ]; then echo "Recorded host changes:"; grep -v '^PKG ' "$MANIFEST" | sed 's/^/  /'
     echo "  + $(grep -c '^PKG ' "$MANIFEST" || true) packages"; fi
   systemctl is-active -q oif-install 2>/dev/null && echo "An install job is running: sudo tail -f $LOG"
@@ -79,7 +79,7 @@ replay_manifest() {   # reverse every recorded change, newest first; package rem
   local kind rest t redo=no datadirs=()
   local i; for (( i=${#TEARDOWNS[@]}-1; i>=0; i-- )); do t=${TEARDOWNS[i]}   # later layers first (Kubernetes before containerd)
     recorded "TEARDOWN $t" && { log "teardown: $t"; "teardown_${t//-/_}"; }; done
-  while read -r kind rest; do
+  while read -r -u 3 kind rest; do   # records on fd 3: a command in the loop cannot read them away
     case $kind in
       SERVICE)  systemctl disable --now "$rest" >/dev/null 2>&1 || true; ok "stopped $rest" ;;
       ENABLED)  systemctl disable "$rest" >/dev/null 2>&1 || true ;;
@@ -101,7 +101,7 @@ replay_manifest() {   # reverse every recorded change, newest first; package rem
       PKG|TEARDOWN) ;;
       *)        warn "unknown manifest record: $kind $rest" ;;
     esac
-  done < <(tac "$MANIFEST")
+  done 3< <(tac "$MANIFEST")
   if [ $redo = yes ]; then update-initramfs -u -k "$(uname -r)" >/dev/null 2>&1; ok "boot image rebuilt"; fi
   local d; for d in "${datadirs[@]}"; do   # never delete through a mount that is still attached
     [ -n "$d" ] && [ "$d" != / ] && [ -e "$d" ] || continue
