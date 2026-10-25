@@ -201,7 +201,8 @@ stage_runai_patches() {
     ok "Run:ai runs its stock images (RUNAI_PATCHES=none)"; return 0
   fi
   kc create namespace oif-build --dry-run=client -o yaml | kc apply -f - >> "$LOG"
-  kc -n oif-build create configmap runai-patch-build $(printf -- '--from-file=%s ' "$OIF_HOME"/patches/runai/build-*.sh) \
+  local scripts=("$OIF_HOME"/patches/runai/build-*.sh)
+  kc -n oif-build create configmap runai-patch-build "${scripts[@]/#/--from-file=}" \
     --dry-run=client -o yaml | kc apply -f - >> "$LOG"
   kc -n oif-build create configmap runai-patches --from-file="$OIF_HOME/patches/runai/$RUNAI_VERSION/" --dry-run=client -o yaml \
     | kc apply -f - >> "$LOG"
@@ -246,8 +247,8 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
     "$CRANE_SHA256" "$STATE/build/src/crane-$CRANE_VERSION.tgz"
   mkdir -p "$out"; rm -f "$out/$comp.tar" "$out/$comp.rev"
   kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
+  export RUNAI_VERSION RUNAI_SOURCE_SHA256 CRANE_VERSION CRANE_SHA256   # the Job template reads them
   COMPONENT=$comp BUILD_IMAGE=$2 BASE_IMAGE=$RUNAI_STOCK_REGISTRY/$comp:$RUNAI_VERSION NEW_IMAGE=$img RUNAI_PATCH_OUT=$out \
-    RUNAI_VERSION=$RUNAI_VERSION RUNAI_SOURCE_SHA256=$RUNAI_SOURCE_SHA256 CRANE_VERSION=$CRANE_VERSION CRANE_SHA256=$CRANE_SHA256 \
     RUNAI_BUILD_SRC=$STATE/build/src RUNAI_BUILD_CACHE=$STATE/build/cache \
     render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
   log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min; longer on a slow link)"

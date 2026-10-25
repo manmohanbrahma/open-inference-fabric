@@ -102,7 +102,6 @@ valid_or_ask() {   # VAR question default validator [secret]: keep a valid value
 v_ip_here() { valid_ip "$1" || { echo "not an IPv4 address"; return 1; }; [ -n "$(host_prefix "$1")" ] || { echo "$1 is not an address of this host"; return 1; }; }
 v_range() { check_range "$1" "$(host_prefix "$HOST_IP")"; }
 v_dir() { [[ $1 == /* && $1 != / ]] || { echo "give an absolute path (not /)"; return 1; }; }
-v_any() { return 0; }
 v_domain() { [ -z "$1" ] || [[ $1 =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "not a domain name"; return 1; }; }
 first_ip() { echo "${1%%-*}"; }   # first address of a range
 v_patches() { case "$1" in ""|all|none) ;; *) echo "use all (empty) or none"; return 1 ;; esac; }
