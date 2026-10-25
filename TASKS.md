@@ -41,6 +41,18 @@ Slice: the same cluster also schedules the W7900, with AMD telemetry next to NVI
 - [ ] T-116 KAI scheduler patch: vendor-aware placement on a node with both vendors (an NVIDIA pod must not be bound when only the AMD GPU is free)
 - Checkpoint: one project with quota 1+1; both GPUs allocatable; a third GPU pod waits on quota; uninstall still clean.
 
+### P1.3 Multi-node hybrid cluster
+
+Slice: NVIDIA and AMD GPUs in separate nodes, as in production (one vendor per server), with a highly available control plane. Tested on the [hybrid-gpu-lab](https://github.com/manmohanbrahma/hybrid-gpu-lab) VMs: cp1-3 (control plane), gpu-amd (W7900), gpu-nvidia (A6000).
+
+- [x] T-119 KVM lab (separate project hybrid-gpu-lab): 3 control-plane + 2 GPU worker VMs, GPUs passed through, create/destroy/recreate; both drivers initialise in the VMs and survive a recreate (2026-10-26)
+- [ ] T-120 Node list `OIF_NODES` (name=address:role), cluster SSH key created by oif on cp1 and installed once through the admin's access, admin key kept or removed on the control plane by choice, per-node runner (oif copies itself to a node and runs the same stages there with that node's own change record); unit tests with stubbed SSH
+- [ ] T-121 HA Kubernetes: kube-vip API address `OIF_API_VIP`, `kubeadm init` on cp1, cp2/cp3 join as control planes, workers join; Calico, MetalLB in the node subnet; control-plane taint removed (Run:ai runs there)
+- [ ] T-122 Per-node GPU stages from each node's PCI devices: NVIDIA driver with nouveau blocked on NVIDIA nodes, `linux-firmware-amd-graphics` on AMD nodes (the cloud image has neither); both GPU operators select their nodes
+- [ ] T-123 Run:ai on several nodes: node pools `nvidia` and `amd` from an oif node label, project quotas per pool (real per-vendor quotas; ADR-015's ResourceQuota stays for single-node), patched Run:ai images loaded on every node
+- [ ] T-124 Demonstration and guides: install, stop cp1 (API and Run:ai keep working), workloads in both pools, quotas, dashboards with two GPU nodes, uninstall across nodes, `lab recreate`, install again
+- Checkpoint: five Ready nodes; Run:ai shows two pools with one GPU each; a project with quota 1 per pool runs one workload per vendor and queues a third; uninstall leaves every node clean.
+
 ## Project 2: Serving and a fair benchmark
 
 The goal is an apples-to-apples comparison: same model, same Dynamo version, same engine version and flags, same benchmark profile, one GPU under load at a time (ADR-011, ADR-012).
@@ -73,13 +85,33 @@ The goal is an apples-to-apples comparison: same model, same Dynamo version, sam
 - [ ] T-224 Benchmark matrix: {A6000, W7900} x {vLLM, SGLang} x {Dynamo default, latest overlay}; 3 repeats; HTML comparison report with versions, image digests, flags, power and clocks
 - Checkpoint: a fair-comparison report the owner signs off for publication.
 
-## Project 3: Unified API and AI gateway (planning only)
+## Project 3: Unified API and AI gateway
 
-Not yet planned in detail. Starting points to research and decide with the owner:
+One OpenAI-compatible API in front of every model on both vendors, with API keys, token budgets and usage per team, then a self-service API to deploy, serve and benchmark. Starts after P1.3 and P2.1 + S-1 (models served by Dynamo on NVIDIA and on AMD). Design: ADR-018 (proposed).
 
-- One OpenAI-compatible API and gateway in front of every environment (Dynamo frontend, GAIE with the Dynamo endpoint picker, or a separate AI gateway); API keys and rate limits.
-- A self-service "pick an environment and schedule a job" API and UI on top of Run:ai projects: choose vendor, GPU, engine and profile, then deploy, serve or benchmark.
-- Placement policies: by cost, latency, availability or vendor preference.
+### P3.1 AI gateway
+
+- [ ] S-6 **Gateway choice.** agentgateway (Linux Foundation, v1.x; the gateway Dynamo documents for GAIE routing) against Agent Router (formerly Envoy AI Gateway, v1.2; mature token rate limits and quotas), both through the Gateway API Inference Extension. Same test on the lab cluster: OpenAI chat and streaming to a Dynamo model on each vendor through an InferencePool with Dynamo's endpoint picker; per-key authentication; a per-key token budget that refuses the request over it; usage metrics in Prometheus; added latency at concurrency 8. Exit: the owner picks one (ADR-018 accepted).
+- [ ] T-301 Gateway installed by an oif stage, pinned; its own MetalLB address and `api.<domain>` with the oif CA; Gateway API and GAIE CRDs pinned
+- [ ] T-302 One route per model name; an InferencePool per model and vendor (Dynamo's EPP for Dynamo deployments); `/v1/models` lists what is served
+- [ ] T-303 Vendor policy per model: pinned to a vendor, preferred with fail-over, or split by weight; a request header can ask for a vendor
+- [ ] T-304 API keys per team, mapped to a Run:ai project; keys stored as Kubernetes secrets, created and revoked with `oif api-key`
+- [ ] T-305 Token rate limits and budgets per key (input and output tokens), 429 with a clear message when exceeded
+- [ ] T-306 Usage and cost dashboard: requests, tokens, errors and latency per key, model and vendor; `oif:` recording rules with promtool tests
+- [ ] T-307 Guide and published pages; AIPerf through the gateway vs direct to the frontend (gateway overhead)
+- Checkpoint: two teams with their own keys call the same model name; one is served by the A6000, one by the W7900 (or both with fail-over); a team over its token budget gets 429; Grafana shows tokens per team and vendor.
+
+### P3.2 Self-service API
+
+- [ ] T-311 API design (OpenAPI): environments (vendor, GPU, engine, profile), deployments, benchmark runs; authenticated with the P3.1 keys, scoped to the key's Run:ai project
+- [ ] T-312 Deploy and remove a model: creates the Dynamo deployment in the project's namespace (scheduled by KAI under the project's quota), its InferencePool and route
+- [ ] T-313 Benchmark runs through the API: AIPerf Job with a profile, results as JSON and in the report
+- [ ] T-314 Small web UI on the API, or Run:ai workload templates where they are enough
+- [ ] T-315 Placement policies: by vendor preference, free capacity, latency target or cost per token
+
+### P3.3 Agents and tools (optional)
+
+- [ ] T-321 MCP tool servers behind the same gateway, with the same keys (both gateway candidates support MCP)
 
 ## Release
 

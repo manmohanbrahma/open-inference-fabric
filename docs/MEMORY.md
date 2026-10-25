@@ -24,7 +24,7 @@ P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-1
 
 ## Next step
 
-Guide 9 (uninstall and reinstall, T-107). T-116 KAI patch for vendor-aware placement. Then the multi-node hybrid cluster (NVIDIA and AMD GPUs in separate VMs, real node pools per vendor), then Project 2 (Dynamo).
+P1.3 multi-node (ADR-017): T-120 node list, cluster key and per-node runner, then T-121 to T-124 on the hybrid-gpu-lab VMs (T-119 done). Then Project 2 (Dynamo), then Project 3 (AI gateway, ADR-018 proposed, spike S-6). Also open: guide 9 (uninstall), T-116 KAI vendor-aware placement.
 
 ## Notes
 
