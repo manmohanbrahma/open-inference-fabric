@@ -10,6 +10,12 @@ status() {
   [ -f "$CONF" ] && echo "Host ${HOST_IP:-?}, data in ${INSTALL_DIR:-?}, MetalLB ${METALLB_RANGE:-?}"
   local s; echo "Stages:"
   for s in "${STAGES[@]}"; do if done_ "$s"; then echo "  [x] $s"; else echo "  [ ] $s"; fi; done
+  if multi_node; then local name addr role; echo "Nodes (this host first):"
+    while read -r name addr role; do
+      if [ "$name" = "$(nodes_list | head -1 | cut -d' ' -f1)" ]; then echo "  $name $addr $role: this host"
+      elif [ -f "$CLUSTER_KEY" ] && node_ok "$addr"; then echo "  $name $addr $role: reachable with the cluster key"
+      else echo "  $name $addr $role: not reachable with the cluster key"; fi
+    done < <(nodes_list); fi
   if [ -s "$MANIFEST" ]; then echo "Recorded host changes:"; grep -v '^PKG ' "$MANIFEST" | sed 's/^/  /'
     echo "  + $(grep -c '^PKG ' "$MANIFEST" || true) packages"; fi
   systemctl is-active -q oif-install 2>/dev/null && echo "An install job is running: sudo tail -f $LOG"
@@ -30,7 +36,9 @@ describe_records() {   # stdin: manifest lines -> what uninstall does with each
     RESTORE) echo "restore ${rest#* } from its backup" ;;  BLOCK) echo "remove oif block '${rest#* }' from ${rest%% *}" ;;
     LINE) echo "remove a line from ${rest%% *}" ;;  SWAP) echo "re-enable swap" ;;  GROUP) echo "remove user from group: $rest" ;;
     SERVICE) echo "stop and disable $rest" ;;  ENABLED) echo "disable $rest" ;;  INITRAMFS) echo "rebuild the boot image" ;;
-    TEARDOWN) echo "tear down: $rest" ;;  *) echo "$kind $rest" ;;
+    TEARDOWN) echo "tear down: $rest" ;;  NODE) echo "uninstall node ${rest#* } (${rest%% *}) to its OS default" ;;
+    NODEKEY) echo "remove oif's cluster key from ${rest%% *}" ;;  ADMINKEY) echo "remove your SSH key oif added on ${rest%% *}" ;;
+    *) echo "$kind $rest" ;;
   esac; done; }
 
 uninstall() {
@@ -87,6 +95,9 @@ replay_manifest() {   # reverse every recorded change, newest first; package rem
       DIR|DATADIR) datadirs+=("$rest") ;;
       GROUP)    gpasswd -d "${rest% *}" "${rest#* }" >/dev/null 2>&1 || true ;;
       INITRAMFS) redo=yes ;;
+      NODE)     node_uninstall "${rest%% *}" ;;   # another node of the cluster: its own record, replayed there
+      ADMINKEY) node_ssh "${rest%% *}" "$(authorized_del "${rest#* }")" >/dev/null 2>&1 || warn "${rest%% *}: admin key not removed" ;;
+      NODEKEY)  OIF_NODE_USER=${rest#* } node_ssh "${rest%% *}" "$(authorized_del "$(cat "$CLUSTER_KEY.pub")")" >/dev/null 2>&1                   && ok "cluster key removed from ${rest%% *}" || warn "${rest%% *}: cluster key not removed (remove the oif-cluster line from authorized_keys)" ;;
       PKG|TEARDOWN) ;;
       *)        warn "unknown manifest record: $kind $rest" ;;
     esac

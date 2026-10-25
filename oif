@@ -5,6 +5,7 @@
 #   ./oif check                   read-only host and GPU report (no sudo needed)
 #   sudo ./oif install            asks its questions first, then runs unattended as a background job
 #        install --reconfigure    asks again for settings that are invalid or changed in .env, then continues
+#        install --until STAGE    stops after that stage (to test a part, e.g. --until nodes)
 #   sudo ./oif status             progress and recorded host changes
 #   sudo ./oif plan               read-only preview of what uninstall would remove and keep
 #   sudo ./oif uninstall [--yes]  reverse every host change oif made, back to the OS default
@@ -38,7 +39,7 @@ main() {
   case $verb in
     help|-h|--help) usage; return 0 ;;
     version|--version) echo "oif $OIF_VERSION"; return 0 ;;
-    check|plan|status|install|uninstall|_worker|_uninstall-worker|_resume) ;;
+    check|plan|status|install|uninstall|_worker|_uninstall-worker|_resume|_node|_node-uninstall) ;;
     *) usage_error "unknown command '$verb'" ;;
   esac
   [ "$(id -u)" = 0 ] || [ "$verb" = check ] || { echo "run with sudo: sudo $0 $verb"; exit 2; }
@@ -55,19 +56,28 @@ main() {
     install)   install_interactive "${args[@]+"${args[@]}"}" ;;
     _worker|_resume) INTERACTIVE=0; exec >>"$LOG" 2>&1; TLOG=/dev/null; install_run ;;
     _uninstall-worker) INTERACTIVE=0; OIF_RERUN=uninstall; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
+    # on another node of a multi-node cluster, started over SSH by the first node (ADR-017); output goes back to it
+    _node) INTERACTIVE=0; node_worker ;;
+    _node-uninstall) INTERACTIVE=0; OIF_RERUN=uninstall; LOG=$UNINSTALL_LOG; TLOG=$UNINSTALL_LOG; : > "$LOG"; uninstall_run ;;
   esac
 }
 
-usage() { sed -n '3,14p' "$SELF" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,15p' "$SELF" | sed 's/^# \{0,1\}//'; }
 usage_error() { echo "oif: $*" >&2; echo "run '$0 help' for usage" >&2; exit 2; }
 
 install_interactive() {
   exec 9>"$STATE/lock"; flock -n 9 || die "another oif run is active (follow it: sudo tail -f $LOG)"
-  if [ -f "$CONF" ] && [ "${1:-}" != --reconfigure ]; then
+  local reconf=no; rm -f "$STATE/until"
+  while [ $# -gt 0 ]; do case $1 in
+    --reconfigure) reconf=yes; shift ;;
+    --until) [[ " ${STAGES[*]} " == *" ${2:-} "* ]] || usage_error "--until needs a stage: ${STAGES[*]}"; echo "$2" > "$STATE/until"; shift 2 ;;
+    *) usage_error "unknown install option '$1'" ;; esac; done
+  if [ -f "$CONF" ] && [ $reconf = no ]; then
     echo "Using the settings saved by the first run ($CONF); finished stages are skipped."
     echo "(To change them: edit .env and run 'sudo $SELF install --reconfigure'.)"
     config_validate
   else config_collect; fi
+  nodes_prepare   # multi-node: the cluster key on every node, while the admin's SSH agent is still at hand
   exec 9>&-
   systemctl reset-failed oif-install >/dev/null 2>&1 || true
   local from=$(( $(wc -l < "$LOG") + 1 ))
@@ -83,7 +93,9 @@ install_run() {
   [ -f "$CONF" ] || die "no saved settings: run 'sudo $SELF install' interactively first"
   config_load_saved
   config_validate
-  run_stages
+  local until=""; [ -f "$STATE/until" ] && until=$(cat "$STATE/until")
+  run_stages "$until"
+  if [ -n "$until" ]; then rm -f "$STATE/until"; log "stopped after stage $until (--until); run 'sudo $SELF install' to continue"; return 0; fi
   if [ -f "$RESUME_UNIT" ]; then systemctl disable oif-resume >/dev/null 2>&1 || true; rm -f "$RESUME_UNIT"; systemctl daemon-reload; fi
   log "install finished"
 }

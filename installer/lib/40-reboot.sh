@@ -17,6 +17,8 @@ WantedBy=multi-user.target
 }
 
 reboot_ask() {   # reason: consent comes from REBOOT_OK (asked with the questions) or from the person at the terminal
+  # on a node of a multi-node cluster, the first node reboots it and runs the node stages again
+  [ "${OIF_NODE:-0}" = 1 ] && { warn "a reboot is needed to $1"; exit "$NODE_REBOOT_RC"; }
   install_resume_unit; warn "a reboot is needed to $1"
   if [ "${REBOOT_OK:-no}" = yes ]; then
     echo "  rebooting in 10 s (agreed at the start); the install continues after the reboot" | tee -a "$TLOG"; sync; sleep 10; systemctl reboot; exit 0

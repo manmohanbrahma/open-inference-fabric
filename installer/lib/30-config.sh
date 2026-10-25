@@ -2,7 +2,8 @@
 # Settings: read from .env (never executed), validated, missing values asked, saved to $CONF (mode 600).
 
 CONFIG_KEYS=(HOST_IP METALLB_RANGE INSTALL_DIR NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS
-             HF_TOKEN RUNAI_DOMAIN RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID RUNAI_PATCHES)
+             HF_TOKEN RUNAI_DOMAIN RUNAI_ADMIN_EMAIL RUNAI_ADMIN_PASSWORD GRAFANA_ADMIN_PASSWORD MODEL_ID RUNAI_PATCHES
+             OIF_NODES OIF_API_VIP OIF_NODE_USER ADMIN_KEY_ON_CONTROL)
 
 env_parse() {   # file: print KEY<TAB>VALUE for the known keys; values are data, never evaluated
   python3 - "$1" "${CONFIG_KEYS[@]}" <<'PY'
@@ -109,13 +110,14 @@ runai_domain() { echo "${RUNAI_DOMAIN:-runai.$(first_ip "$METALLB_RANGE" | tr . 
 
 CONFIG_CHECKS=(HOST_IP:v_ip_here METALLB_RANGE:v_range INSTALL_DIR:v_dir NVIDIA_GPUS:v_nv AMD_GPUS:v_amd ISOLATE_GPUS:v_iso
                RUNAI_DOMAIN:v_domain RUNAI_ADMIN_EMAIL:check_email RUNAI_ADMIN_PASSWORD:check_runai_password GRAFANA_ADMIN_PASSWORD:check_password
-               RUNAI_PATCHES:v_patches)
+               RUNAI_PATCHES:v_patches OIF_NODES:v_nodes OIF_API_VIP:v_vip ADMIN_KEY_ON_CONTROL:v_yesno)
 config_validate() {   # saved settings still valid on this host (secret values are never printed)
   local kv k f why bad=0
   for kv in "${CONFIG_CHECKS[@]}"; do k=${kv%%:*}; f=${kv#*:}
     [ -n "${!k:-}" ] || continue
     why=$($f "${!k}" 2>&1) || { warn "setting $k: $why"; bad=1; }
   done
+  if multi_node && [ -z "${OIF_API_VIP:-}" ]; then why=$(v_vip "") || { warn "setting OIF_API_VIP: $why"; bad=1; }; fi
   [ $bad = 0 ] || die "the saved settings are not valid on this host: correct them with 'sudo $SELF install --reconfigure'"
 }
 
@@ -145,6 +147,15 @@ config_collect() {   # all questions first; nothing on the host changes here
     ping -c1 -W1 "$ip" >/dev/null 2>&1 && used="$used $ip"; done
   [ -z "$used" ] && ok "MetalLB range $METALLB_RANGE: no address answers ping" || warn "these addresses answer ping and may be in use:$used"
 
+  echo; echo "${c_b}Cluster nodes${c_0} (ADR-017; empty = this host only)"
+  echo "   name=address:role for each node, this host first, e.g. cp1=192.168.120.11:control gpu-amd=192.168.120.21:worker"
+  valid_or_ask OIF_NODES "   Nodes" "" v_nodes
+  if multi_node; then
+    valid_or_ask OIF_API_VIP "   Free address for the Kubernetes API on the control-plane nodes" "" v_vip
+    if [ -z "${ADMIN_KEY_ON_CONTROL:-}" ]; then
+      yesno "   Put your SSH public key on the other control-plane nodes too" y && ADMIN_KEY_ON_CONTROL=yes || ADMIN_KEY_ON_CONTROL=no; fi
+  fi
+
   echo; echo "${c_b}Storage${c_0}"
   local base; base=$(largest_fs); base=${base%/}
   valid_or_ask INSTALL_DIR "   Data folder (images, volumes, models, results; removed by uninstall)" "$base/oif" v_dir
@@ -162,6 +173,7 @@ config_collect() {   # all questions first; nothing on the host changes here
   echo "   Host $HOST_IP, user $INSTALL_USER, MetalLB $METALLB_RANGE, data in $INSTALL_DIR"
   echo "   NVIDIA GPUs: ${NVIDIA_GPUS:-all}; AMD GPUs (from 1.2): ${AMD_GPUS:-all supported}; isolated: ${ISOLATE_GPUS:-none}"
   echo "   Run:ai admin $RUNAI_ADMIN_EMAIL; HF token $([ -n "$HF_TOKEN" ] && echo set || echo 'not set')"
+  multi_node && echo "   Nodes: $OIF_NODES; API address $OIF_API_VIP; your key on the control plane: $ADMIN_KEY_ON_CONTROL"
   echo "   Stages: ${STAGES[*]}"
   REBOOT_OK=no
   local b need=""; for b in "${NV_BDFS[@]}"; do [ "$(drv "$b")" = nvidia ] || need="the NVIDIA driver"; done

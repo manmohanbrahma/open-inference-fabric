@@ -25,6 +25,8 @@ stage_k8s_packages() {
   ok "kubeadm, kubelet, kubectl $KUBERNETES_VERSION (held); helm $(helm version --short | cut -d+ -f1)"
 }
 
+register_stage nodes        # multi-node: the node stages above on every other node (installer/lib/60-nodes.sh)
+
 register_stage kubernetes
 register_teardown kubernetes
 stage_kubernetes() {

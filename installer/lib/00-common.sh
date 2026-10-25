@@ -67,7 +67,7 @@ done_() { [ -f "$DONE/$1" ] && [ "$(cat "$DONE/$1")" = "$(stage_want "$1")" ]; }
 stage() { local s=$1; done_ "$s" && return 0
   if [ -s "$DONE/$s" ]; then log "stage: $s ($(cat "$DONE/$s") -> $(stage_want "$s"))"; else log "stage: $s"; fi
   "stage_${s//-/_}"; stage_want "$s" > "$DONE/$s"; }
-run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; done; }
+run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; [ "$s" = "${1:-}" ] && return 0; done; }   # [last stage]
 
 # ---------------------------------------------------------------- small helpers
 retry() {   # cmd...: up to 4 tries, 15/30/45 s apart
