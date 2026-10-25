@@ -11,7 +11,8 @@ One guide per step of the plan in [TASKS.md](../../TASKS.md). Each guide is writ
 | 5 | [Run:ai open source](05-runai.md) (published with screenshots: [Installation Guide](https://manmohanbrahma.github.io/ai/runai/install-guide/), [Deployment Guide](https://manmohanbrahma.github.io/ai/runai/deployment-guide/)) | T-105 | Tested |
 | 6 | [AMD GPU Operator and Run:ai quotas on AMD GPUs](06-amd-gpu-operator.md) | T-111, S-2, T-113 | Tested |
 | 7 | [Observability for NVIDIA and AMD GPUs](07-observability.md): recording rules, Fleet and Scheduling dashboards, Grafana | T-106, T-112, T-114 | Tested |
-| 8 | Uninstall | T-107 | Planned |
+| 8 | [Run:ai patches and ROCm templates for AMD GPUs](08-runai-patches.md): Run:ai counts both vendors, AMD logo, node ready without fractions | T-115 | Tested |
+| 9 | Uninstall and reinstall | T-107 | Tested, guide to write |
 
 Project 2 (Dynamo serving and benchmarks) and 3 (unified API and gateway) add their guides here as they are built.
 

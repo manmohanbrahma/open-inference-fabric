@@ -20,11 +20,11 @@ The owner split the work into three projects (ADR-010): Project 1 orchestration 
 
 ## Current task
 
-P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-113 done, spike S-2 passed (guide 6). T-106, T-112, T-114 done (guide 7). Next: T-107 uninstall test, then Project 1 is complete.
+P1.1: T-101 to T-105 done, spike S-3 passed (guides 1 to 5). P1.2: T-111 and T-113 done, spike S-2 passed (guide 6). T-106, T-112, T-114 done (guide 7). T-107 uninstall and reinstall passed. T-115 done (guide 8): oif patches Run:ai so it counts and shows AMD GPUs.
 
 ## Next step
 
-T-107: full `oif uninstall` on the reference host, check the host is back to the OS default, reinstall from scratch. Then Project 2 (Dynamo).
+Guide 9 (uninstall and reinstall, T-107). T-116 KAI patch for vendor-aware placement. Then the multi-node hybrid cluster (NVIDIA and AMD GPUs in separate VMs, real node pools per vendor), then Project 2 (Dynamo).
 
 ## Notes
 
@@ -40,7 +40,10 @@ T-107: full `oif uninstall` on the reference host, check the host is back to the
 - Dynamo has no official ROCm support (ADR-002); decided by S-1.
 - SGLang ROCm builds target Instinct GPUs; serving on the W7900 (gfx1100) is unproven (S-5).
 - TensorRT-LLM support for the A6000 (Ampere) must be checked before T-204.
-- Run:ai GPU quotas count `amd.com/gpu` (S-2) as one count with NVIDIA; per-vendor caps come from a Kubernetes ResourceQuota (ADR-015). Run:ai's GPU inventory lists only NVIDIA GPUs, but its allocation figures count both vendors in one number.
+- Run:ai GPU quotas count `amd.com/gpu` (S-2) as one count with NVIDIA; per-vendor caps come from a Kubernetes ResourceQuota (ADR-015). Stock Run:ai's GPU inventory lists only NVIDIA GPUs; oif's patches (ADR-016) add the AMD GPU.
+- The KAI scheduler adds both vendors into one GPU count per node: on a mixed node it can bind an NVIDIA pod when only the AMD GPU is free (kubelet `UnexpectedAdmissionError`); T-116.
+- With GPU fractions off (T-108), patched Run:ai shows the cluster as Missing prerequisites (fractions unavailable); the node is Ready and whole-GPU workloads run.
+- The lab's internet link can drop to tens of KB/s; the Run:ai patch builds keep the source and caches in the state folder and retry.
 - AMD GPU Operator v1.5.1 needs `kmm.watch: false` as well as `kmm.enabled: false`, or its controller crash-loops after two minutes.
 - The open-source Run:ai control plane's footprint on a single node is unknown; measured in S-3.
 - The W7900 is a workstation GPU (gfx1100); AMD validates distributed serving stacks on Instinct GPUs.

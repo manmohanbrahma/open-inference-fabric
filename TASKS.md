@@ -37,6 +37,8 @@ Slice: the same cluster also schedules the W7900, with AMD telemetry next to NVI
 - [x] T-112 `oif:gpu_*` recording rules for both vendors with `promtool` unit tests (pinned Prometheus 3.15.0); also oif:node_*, per-vendor allocatable/requested/caps and Run:ai project series
 - [x] T-113 Per-vendor GPU quotas (ADR-015: a single node cannot be split into node pools, so a Kubernetes ResourceQuota caps each vendor inside one Run:ai project): project team-c, quota 2 = 1 NVIDIA + 1 AMD; one pod per vendor runs, a third GPU pod is refused. Passed 2026-10-25 (stage vendor-quota)
 - [x] T-114 Fleet dashboard shows both vendors on the same panels (tested 2026-10-25)
+- [x] T-115 Run:ai counts and shows AMD GPUs (ADR-016, guide 8): oif patch set for Run:ai 3.0.20 built on the cluster (cluster-sync counts AMD GPUs on mixed nodes, web UI AMD logo for ROCm images, operator reports fractions unavailable when no node runs them); ROCm templates pytorch-rocm-1-gpu and jupyter-lab-rocm-1-gpu; the same PyTorch check printed the W7900 and the A6000. Passed 2026-10-25: Overview 1/1 nodes, 2/2 GPU devices
+- [ ] T-116 KAI scheduler patch: vendor-aware placement on a node with both vendors (an NVIDIA pod must not be bound when only the AMD GPU is free)
 - Checkpoint: one project with quota 1+1; both GPUs allocatable; a third GPU pod waits on quota; uninstall still clean.
 
 ## Project 2: Serving and a fair benchmark
