@@ -228,6 +228,9 @@ runai_fetch_resumable() {   # url sha256 dst: download once into the state folde
   [ "$(sha256sum "$dst.part" | cut -c1-64)" = "$sum" ] || { rm -f "$dst.part"; die "checksum mismatch for $url (expected $sum)"; }
   mv "$dst.part" "$dst"; ok "${dst##*/} downloaded and verified"
 }
+runai_image_loaded() {   # image: in containerd (grep reads the whole list: with -q, pipefail sees ctr cut off and fails)
+  ctr -n k8s.io images ls -q | grep -xF "$1" >/dev/null
+}
 runai_patch_comp_rev() {   # component build-image (env SRC_DIR BINARY TEST_PKGS): what decides the image's content
   cat "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$1"*.patch \
     | { cat; echo "$2 $SRC_DIR $BINARY $TEST_PKGS $CRANE_VERSION $CRANE_SHA256 $RUNAI_VERSION $RUNAI_SOURCE_SHA256"; } | sha256sum | cut -c1-12
@@ -235,7 +238,7 @@ runai_patch_comp_rev() {   # component build-image (env SRC_DIR BINARY TEST_PKGS
 runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY TEST_PKGS): Job -> image tarball -> containerd
   local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1 rev
   rev=$(runai_patch_comp_rev "$comp" "$2")
-  if [ "$(cat "$out/$comp.rev" 2>/dev/null)" = "$rev" ] && ctr -n k8s.io images ls -q | grep -qxF "$img"; then
+  if [ "$(cat "$out/$comp.rev" 2>/dev/null)" = "$rev" ] && runai_image_loaded "$img"; then
     ok "patched image $img is already built from the same patches ($rev)"; return 0; fi
   runai_fetch_resumable "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION" \
     "$RUNAI_SOURCE_SHA256" "$STATE/build/src/run-ai-$RUNAI_VERSION.tgz"
@@ -255,7 +258,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   [ "$(kc -n oif-build get job "runai-patch-$comp" -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/$comp.tar" ] \
     || die "Run:ai $comp build failed (kubectl -n oif-build logs job/runai-patch-$comp)"
   ctr -n k8s.io images import "$out/$comp.tar" >> "$LOG" 2>&1 || die "cannot import the patched $comp image into containerd"
-  ctr -n k8s.io images ls -q | grep -qxF "$img" || die "image $img not found after import"
+  runai_image_loaded "$img" || die "image $img not found after import"
   echo "$rev" > "$out/$comp.rev"
   ok "patched image $img loaded into containerd"
 }
