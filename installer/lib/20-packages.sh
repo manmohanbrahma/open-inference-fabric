@@ -19,7 +19,7 @@ safe_purge() {   # purge recorded packages, but never one whose removal would al
   local set=" ${want[*]} "
   for p in "${want[@]}"; do
     extra=$({ apt-get -s --allow-change-held-packages purge "$p" 2>/dev/null || true; } | awk '/^Purg /{print $2}' \
-      | while read -r x; do [[ $set == *" $x "* ]] || echo "$x"; done | head -3)
+      | while read -r x; do [[ $set == *" $x "* ]] || echo "$x"; done | head -3) || true   # head stops reading early: not a failure
     if [ -n "$extra" ]; then keep+=("$p: removing it would also remove $(echo "$extra" | paste -sd' ')"); else final+=("$p"); fi
   done
   if [ "${PLAN:-0}" = 1 ]; then

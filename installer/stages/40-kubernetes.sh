@@ -72,13 +72,15 @@ teardown_kubernetes() {   # everything kubeadm and the network plugin put on the
   # NVIDIA runtime (removed later, with containerd). Left to kubeadm reset, both failed and the reset took 5.5 min.
   if command -v crictl >/dev/null && [ -S /run/containerd/containerd.sock ]; then
     systemctl stop kubelet >/dev/null 2>&1 || true
-    local ids; ids=$(crictl pods -o json 2>/dev/null | python3 -c '
+    # a re-run after a partial uninstall finds no pods and crictl may print nothing: that is not a failure
+    local ids; ids=$({ crictl pods -o json 2>/dev/null || true; } | python3 -c '
 import json, sys
+text = sys.stdin.read().strip()
 static = ("etcd-", "kube-apiserver-", "kube-controller-manager-", "kube-scheduler-")
-for p in json.load(sys.stdin).get("items", []):
+for p in (json.loads(text).get("items") or [] if text else []):
     m = p["metadata"]
     if not (m["namespace"] == "kube-system" and m["name"].startswith(static)):
-        print(p["id"])' | xargs)
+        print(p["id"])' | xargs) || ids=""
     if [ -n "$ids" ]; then
       # shellcheck disable=SC2086
       timeout 300 crictl stopp $ids >> "$LOG" 2>&1 || warn "some pods did not stop in time"
