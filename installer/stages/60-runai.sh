@@ -215,20 +215,25 @@ stage_runai_patches() {
   runai_api nodes | sed 's/^/    /' | tee -a "$TLOG"
 }
 runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY TEST_PKGS): Job -> image tarball -> containerd
-  local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1
-  mkdir -p "$out"; rm -f "$out/$comp.tar"
+  local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1 rev
+  rev=$(cat "$OIF_HOME/patches/runai/$BUILD_SCRIPT" "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$comp"*.patch \
+    | { cat; echo "$2 $SRC_DIR $BINARY $TEST_PKGS $CRANE_VERSION $CRANE_SHA256 $RUNAI_SOURCE_SHA256"; } | sha256sum | cut -c1-12)
+  if [ "$(cat "$out/$comp.rev" 2>/dev/null)" = "$rev" ] && ctr -n k8s.io images ls -q | grep -qxF "$img"; then
+    ok "patched image $img is already built from the same patches ($rev)"; return 0; fi
+  mkdir -p "$out"; rm -f "$out/$comp.tar" "$out/$comp.rev"
   kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
   COMPONENT=$comp BUILD_IMAGE=$2 BASE_IMAGE=$RUNAI_STOCK_REGISTRY/$comp:$RUNAI_VERSION NEW_IMAGE=$img RUNAI_PATCH_OUT=$out \
     RUNAI_VERSION=$RUNAI_VERSION RUNAI_SOURCE_SHA256=$RUNAI_SOURCE_SHA256 CRANE_VERSION=$CRANE_VERSION CRANE_SHA256=$CRANE_SHA256 \
     render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
   log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min)"
-  wait_for "$comp built" 2400 15 bash -c \
+  wait_for "$comp build finished" 2400 15 bash -c \
     "kubectl --kubeconfig $KCFG -n oif-build get job runai-patch-$comp -o jsonpath='{.status.conditions[*].type}' | grep -qE 'Complete|Failed'" || true
   kc -n oif-build logs "job/runai-patch-$comp" 2>&1 | grep -E '^(==|ok|FAIL|---| *Tests|.*passed|.*failed)' | sed 's/^/    /' | tee -a "$TLOG"
   [ "$(kc -n oif-build get job "runai-patch-$comp" -o jsonpath='{.status.succeeded}')" = 1 ] && [ -s "$out/$comp.tar" ] \
     || die "Run:ai $comp build failed (kubectl -n oif-build logs job/runai-patch-$comp)"
   ctr -n k8s.io images import "$out/$comp.tar" >> "$LOG" 2>&1 || die "cannot import the patched $comp image into containerd"
   ctr -n k8s.io images ls -q | grep -qxF "$img" || die "image $img not found after import"
+  echo "$rev" > "$out/$comp.rev"
   ok "patched image $img loaded into containerd"
 }
 runai_patch_use() {   # component stock|patched: point Run:ai at the image and wait for the rollout

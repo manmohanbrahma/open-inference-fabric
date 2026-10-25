@@ -5,7 +5,7 @@
 set -eu
 cd /tmp
 echo "== source run-ai $RUNAI_VERSION"
-curl -fsSL -o src.tgz "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --http1.1 -o src.tgz "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION"
 echo "$RUNAI_SOURCE_SHA256  src.tgz" | sha256sum -c -
 tar -xzf src.tgz "run-ai-$RUNAI_VERSION/control-plane/frontend" && rm src.tgz
 cd "run-ai-$RUNAI_VERSION"
@@ -19,7 +19,7 @@ echo "== build (type check and bundle)"
 NODE_OPTIONS=--max-old-space-size=8192 npm run build > /tmp/build.log 2>&1 || { tail -40 /tmp/build.log; exit 1; }
 tail -2 /tmp/build.log
 echo "== image $NEW_IMAGE from $BASE_IMAGE"
-curl -fsSL -o crane.tgz "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --http1.1 -o crane.tgz "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
 echo "$CRANE_SHA256  crane.tgz" | sha256sum -c -
 tar -xzf crane.tgz crane
 mkdir -p /tmp/layer/usr/share/nginx && cp -r dist /tmp/layer/usr/share/nginx/html

@@ -7,7 +7,7 @@
 set -eu
 cd /tmp
 echo "== source run-ai $RUNAI_VERSION"
-curl -fsSL -o src.tgz "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --http1.1 -o src.tgz "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION"
 echo "$RUNAI_SOURCE_SHA256  src.tgz" | sha256sum -c -
 tar -xzf src.tgz && rm src.tgz
 cd "run-ai-$RUNAI_VERSION"
@@ -20,7 +20,7 @@ go test $TEST_PKGS > /tmp/test.log 2>&1 || { tail -40 /tmp/test.log; exit 1; }
 tail -3 /tmp/test.log
 echo "== build"; CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "/tmp/layer/$BINARY" ./cmd
 echo "== image $NEW_IMAGE from $BASE_IMAGE"
-curl -fsSL -o /tmp/crane.tgz "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 --http1.1 -o /tmp/crane.tgz "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz"
 echo "$CRANE_SHA256  /tmp/crane.tgz" | sha256sum -c -
 tar -xzf /tmp/crane.tgz -C /tmp crane
 tar -C /tmp/layer --owner=65532 --group=0 --mode=0755 -cf /tmp/layer.tar "$BINARY"
