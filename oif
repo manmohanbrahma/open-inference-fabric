@@ -23,7 +23,7 @@ for f in "$OIF_HOME"/installer/lib/*.sh "$OIF_HOME"/installer/stages/*.sh; do
   # shellcheck source=/dev/null
   . "$f"
 done
-trap 'rc=$?; [ "$BASH_SUBSHELL" = 0 ] && echo "${c_r}ERROR: unexpected failure (exit $rc) at ${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND - run oif install again to continue from this stage${c_0}" | tee -a "$TLOG" >&2' ERR
+trap 'rc=$?; [ "$BASH_SUBSHELL" = 0 ] && echo "${c_r}ERROR: unexpected failure (exit $rc) at ${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND - run oif ${OIF_RERUN:-install} again to continue from this stage${c_0}" | tee -a "$TLOG" >&2' ERR
 
 main() {
   local verb=${1:-help}; shift || true
@@ -54,7 +54,7 @@ main() {
     uninstall) uninstall "${args[@]+"${args[@]}"}" ;;
     install)   install_interactive "${args[@]+"${args[@]}"}" ;;
     _worker|_resume) INTERACTIVE=0; exec >>"$LOG" 2>&1; TLOG=/dev/null; install_run ;;
-    _uninstall-worker) INTERACTIVE=0; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
+    _uninstall-worker) INTERACTIVE=0; OIF_RERUN=uninstall; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
   esac
 }
 

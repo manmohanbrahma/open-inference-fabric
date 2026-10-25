@@ -26,7 +26,8 @@ $cfg
 teardown_containerd() {   # stop containers and detach their mounts before the data folder is deleted
   systemctl disable --now containerd >/dev/null 2>&1 || true
   pkill -f containerd-shim 2>/dev/null || true; sleep 2
-  local t; findmnt -rn -o TARGET | grep -E "^(/run/containerd|/var/lib/containerd|${INSTALL_DIR:-/nonexistent}/containerd)(/|$)" | sort -r \
+  local t   # no mount left is fine: grep's "no match" must not fail the pipeline
+  findmnt -rn -o TARGET | { grep -E "^(/run/containerd|/var/lib/containerd|${INSTALL_DIR:-/nonexistent}/containerd)(/|$)" || true; } | sort -r \
     | while read -r t; do umount "$t" 2>/dev/null || umount -l "$t" 2>/dev/null || true; done
   if declare -F nvidia_runtime_leftovers >/dev/null; then nvidia_runtime_leftovers; fi
   ok "containerd stopped"

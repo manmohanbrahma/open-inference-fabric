@@ -89,7 +89,8 @@ for p in json.load(sys.stdin).get("items", []):
   fi
   kubeadm reset -f --cri-socket unix:///run/containerd/containerd.sock >> "$LOG" 2>&1 || true
   systemctl disable --now kubelet >/dev/null 2>&1 || true
-  local t; findmnt -rn -o TARGET | grep -E '^/(var/lib/kubelet|run/netns|run/calico|var/lib/calico)(/|$)' | sort -r \
+  local t   # no mount left is fine: grep's "no match" must not fail the pipeline
+  findmnt -rn -o TARGET | { grep -E '^/(var/lib/kubelet|run/netns|run/calico|var/lib/calico)(/|$)' || true; } | sort -r \
     | while read -r t; do umount "$t" 2>/dev/null || umount -l "$t" 2>/dev/null || true; done
   rm -rf --one-file-system /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d /var/lib/cni /var/lib/calico \
     /run/calico /var/log/calico /var/run/nodeagent /var/log/pods /var/log/containers 2>>"$LOG" || true
