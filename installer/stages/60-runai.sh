@@ -200,6 +200,10 @@ stage_runai_patches() {
     for c in "${RUNAI_PATCH_COMPONENTS[@]}"; do runai_patch_use "${c%% *}" stock; done
     ok "Run:ai runs its stock images (RUNAI_PATCHES=none)"; return 0
   fi
+  runai_fetch_resumable "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION" \
+    "$RUNAI_SOURCE_SHA256" "$STATE/build/src/run-ai-$RUNAI_VERSION.tgz"
+  runai_fetch_resumable "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz" \
+    "$CRANE_SHA256" "$STATE/build/src/crane-$CRANE_VERSION.tgz"
   kc create namespace oif-build --dry-run=client -o yaml | kc apply -f - >> "$LOG"
   kc -n oif-build create configmap runai-patch-build $(printf -- '--from-file=%s ' "$OIF_HOME"/patches/runai/build-*.sh) \
     --dry-run=client -o yaml | kc apply -f - >> "$LOG"
@@ -214,6 +218,18 @@ stage_runai_patches() {
   wait_for "Run:ai counts every GPU of the node" 300 15 runai_nodes_total_gpus_ok || warn "Run:ai still counts fewer GPUs than the node offers"
   runai_api nodes | sed 's/^/    /' | tee -a "$TLOG"
 }
+runai_fetch_resumable() {   # url sha256 dst: download once into the state folder, resuming over a slow or dropping link
+  local url=$1 sum=$2 dst=$3 i
+  [ -s "$dst" ] && [ "$(sha256sum "$dst" | cut -c1-64)" = "$sum" ] && return 0
+  mkdir -p "${dst%/*}"; log "downloading ${dst##*/} (resumes if the connection drops)"
+  for i in $(seq 1 30); do
+    curl -fsSL --http1.1 -C - --speed-limit 1024 --speed-time 60 -o "$dst.part" "$url" >> "$LOG" 2>&1 && break
+    [ "$i" = 30 ] && die "cannot download $url (30 attempts; partial file kept in $dst.part)"
+    sleep 10
+  done
+  [ "$(sha256sum "$dst.part" | cut -c1-64)" = "$sum" ] || { rm -f "$dst.part"; die "checksum mismatch for $url (expected $sum)"; }
+  mv "$dst.part" "$dst"; ok "${dst##*/} downloaded and verified"
+}
 runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY TEST_PKGS): Job -> image tarball -> containerd
   local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1 rev
   rev=$(cat "$OIF_HOME/patches/runai/$BUILD_SCRIPT" "$OIF_HOME/patches/runai/$RUNAI_VERSION"/*"$comp"*.patch \
@@ -224,6 +240,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
   COMPONENT=$comp BUILD_IMAGE=$2 BASE_IMAGE=$RUNAI_STOCK_REGISTRY/$comp:$RUNAI_VERSION NEW_IMAGE=$img RUNAI_PATCH_OUT=$out \
     RUNAI_VERSION=$RUNAI_VERSION RUNAI_SOURCE_SHA256=$RUNAI_SOURCE_SHA256 CRANE_VERSION=$CRANE_VERSION CRANE_SHA256=$CRANE_SHA256 \
+    RUNAI_BUILD_SRC=$STATE/build/src RUNAI_BUILD_CACHE=$STATE/build/cache \
     render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
   log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min)"
   wait_for "$comp build finished" 2400 15 bash -c \

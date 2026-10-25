@@ -28,13 +28,22 @@ spec:
             - {name: CRANE_SHA256, value: "${CRANE_SHA256}"}
             - {name: BASE_IMAGE, value: "${BASE_IMAGE}"}
             - {name: NEW_IMAGE, value: "${NEW_IMAGE}"}
+            - {name: GOMODCACHE, value: /cache/go-mod}
+            - {name: GOCACHE, value: /cache/go-build}
+            - {name: GOFLAGS, value: -modcacherw}
+            - {name: npm_config_cache, value: /cache/npm}
           resources:
             requests: {cpu: "4", memory: 6Gi}
           volumeMounts:
             - {name: scripts, mountPath: /build}
             - {name: patches, mountPath: /patches}
             - {name: out, mountPath: /out}
+            - {name: src, mountPath: /src, readOnly: true}
+            - {name: cache, mountPath: /cache}
       volumes:
         - {name: scripts, configMap: {name: runai-patch-build}}
         - {name: patches, configMap: {name: runai-patches}}
         - {name: out, hostPath: {path: "${RUNAI_PATCH_OUT}", type: DirectoryOrCreate}}
+        # source and crane, downloaded and verified by the installer; Go module and npm caches kept between builds
+        - {name: src, hostPath: {path: "${RUNAI_BUILD_SRC}", type: Directory}}
+        - {name: cache, hostPath: {path: "${RUNAI_BUILD_CACHE}", type: DirectoryOrCreate}}
