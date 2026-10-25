@@ -11,7 +11,7 @@ Published with screenshots as a pair: [Run:ai with NVIDIA and AMD GPUs, Installa
 - **OIF Scheduling:** GPUs offered, in use and waiting per vendor; Run:ai project quotas; the per-vendor caps from guide 6.
 - **Grafana on HTTPS** at `https://grafana.runai.<lb-ip>.sslip.io`, with the same certificate and CA as Run:ai.
 
-Run:ai adds both vendors into one GPU number and its inventory names only the NVIDIA GPU (ADR-015); these dashboards are where the vendors appear side by side.
+Run:ai adds both vendors into one GPU number per project and node (ADR-015); with oif's patches (guide 8) its inventory names both GPUs, but it has no per-vendor figures. These dashboards are where the vendors appear side by side.
 
 ## Before you start
 
@@ -129,4 +129,4 @@ Nothing on the host itself: a PrometheusRule, a ConfigMap, a TLS secret and an i
 | Dashboards missing in Grafana | `kubectl -n monitoring logs deploy/kps-grafana -c grafana-sc-dashboard`; the ConfigMap must carry `grafana_dashboard=1`. |
 | Browser warns about the certificate | Import `~/oif-ca.crt` (guide 5); the Grafana name is covered by the Run:ai wildcard certificate. |
 | `observability-verify` waits on `oif:gpu_*` | Rules are evaluated every 15-30 s after loading; a series missing for one vendor is printed with the vendors it has. |
-| Run:ai's Nodes page shows more GPUs allocated than it has | Expected: Run:ai counts the AMD GPU's allocation but lists only NVIDIA GPUs in its inventory (ADR-015). Use the "GPUs by vendor" row for the split. |
+| Run:ai's Nodes page shows more GPUs allocated than it has | Stock Run:ai counts the AMD GPU's allocation but lists only NVIDIA GPUs in its inventory (ADR-015); the runai-patches stage (guide 8) fixes the inventory. Use the "GPUs by vendor" row for the split. |

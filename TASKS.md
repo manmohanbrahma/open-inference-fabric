@@ -24,7 +24,7 @@ Slice: a clean host becomes a Kubernetes cluster where Run:ai schedules work on 
 - [x] T-104 NVIDIA GPU Operator, default settings (toolkit, device plugin, GFD, DCGM exporter)
 - [x] T-105 Run:ai open source, default install (control plane, cluster, KAI Scheduler); spike S-3 first decides the install method
 - [x] T-106 kube-prometheus-stack; DCGM and Run:ai metrics scraped; Fleet and Scheduling dashboards (both vendors, guide 7; Grafana on grafana.<runai-domain>)
-- [ ] T-107 `oif uninstall`, `status`, `plan`, `check` for everything above
+- [ ] T-107 `oif uninstall`, `status`, `plan`, `check` for everything above. Uninstall + reinstall passed 2026-10-25 (host clean, reinstall from the GitHub tarball without errors); the second uninstall stopped in teardown_containerd (no mount left, grep under pipefail), fixed in 47de19a: to re-verify, then guide 9
 - [ ] T-108 GPU fractions: Run:ai 3.0 needs NVIDIA driver r615 or later (Ubuntu's archive has 595). Options: a newer Ubuntu driver package when published, or the GPU Operator's driver container. Until then the fractioning daemons are kept off the GPU nodes (stage runai-fractions).
 - Checkpoint: project `team-a` with a quota of 1 NVIDIA GPU; a GPU pod runs, a second waits on quota; the dashboards show it; uninstall returns the host to the OS default.
 
