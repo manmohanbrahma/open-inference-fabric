@@ -20,6 +20,21 @@ stage_nvidia_driver() {
   ok "NVIDIA $br driver installed; it loads after the reboot"
 }
 
+# AMD compute GPUs run on the kernel's own amdgpu driver; it needs the GPU firmware files, which minimal images (cloud
+# images, e.g. a lab VM) leave out. A full Ubuntu install has them, so there this stage changes nothing.
+amd_gpu_up() { local b; for b in $(amd_targets); do [ "$(drv "$b")" = amdgpu ] || return 1; done; [ -e /dev/kfd ]; }
+register_stage amd-firmware
+stage_amd_firmware() {
+  [ -n "$(amd_targets)" ] || { ok "no AMD compute GPU"; return 0; }
+  if amd_gpu_up; then ok "AMD GPU $(amd_targets) on amdgpu, /dev/kfd present"; return 0; fi
+  if apt-cache show linux-firmware-amd-graphics >/dev/null 2>&1; then apt_install linux-firmware-amd-graphics; else apt_install linux-firmware; fi
+  ok "AMD GPU firmware installed"
+  # amdgpu loaded but holding no device (it failed without firmware): load it again now; otherwise the reboot stage asks
+  if lsmod | awk '$1 == "amdgpu" {exit !($3 == 0)}'; then
+    modprobe -r amdgpu && modprobe amdgpu && wait_for "AMD GPU started by amdgpu" 60 3 amd_gpu_up || true
+  fi
+}
+
 register_stage gpu-isolation
 stage_gpu_isolation() {
   [ -n "$(iso_list)" ] || { ok "no GPUs to isolate"; return 0; }
@@ -50,6 +65,7 @@ stage_reboot() {   # one reboot for the driver and the isolation; never a second
   local why=() b
   [ -n "$(nv_targets)" ] && ! nv_driver_ok && why+=("load the NVIDIA driver instead of nouveau")
   iso_ok || why+=("bind $(iso_list) to vfio-pci")
+  [ -n "$(amd_targets)" ] && ! amd_gpu_up && why+=("start the AMD GPU with its firmware")
   [ ${#why[@]} = 0 ] && { ok "no reboot needed"; return 0; }
   if [ -f "$DONE/reboot-asked" ] && [ "$(cat "$DONE/reboot-asked")" != "$(cat /proc/sys/kernel/random/boot_id)" ]; then
     for b in $(nv_targets); do warn "$b: driver '$(drv "$b")' (lsmod | grep -E 'nvidia|nouveau'; journalctl -k | grep -i nvidia)"; done
@@ -67,6 +83,10 @@ stage_host_verify() {
     [ "${v%%.*}" -ge "$NVIDIA_DRIVER_MIN" ] || die "NVIDIA driver $v is older than $NVIDIA_DRIVER_MIN"
     for b in $(nv_targets); do [ "$(drv "$b")" = nvidia ] || die "$b is on driver '$(drv "$b")', not nvidia"; done
     ok "NVIDIA driver $v: $(nvidia-smi --query-gpu=name --format=csv,noheader | paste -sd, -)"
+  fi
+  if [ -n "$(amd_targets)" ]; then
+    amd_gpu_up || die "AMD GPU $(amd_targets) not started by amdgpu (sudo dmesg | grep -i amdgpu)"
+    ok "AMD GPU $(amd_targets) on amdgpu, /dev/kfd present"
   fi
   iso_ok || die "not on vfio-pci: $(iso_list) (lspci -nnk -s $(iso_list | cut -d' ' -f1))"
   [ -n "$(iso_list)" ] && ok "isolated on vfio-pci: $(iso_list)"

@@ -122,6 +122,19 @@ recorded "TEARDOWN kubernetes" || fail "a joined node must record its Kubernetes
 [ -e "$OIF_STATE/kubeadm-join.yaml" ] && fail "the join configuration (token) must be deleted after the join"
 unset -f kubeadm systemctl
 
+# the cluster's GPUs: every node's PCI display devices, NVIDIA and supported AMD compute GPUs only
+OIF_NODES=$GOOD
+GPU_SCAN='echo "0000:00:01.0 0x1234 0x1111 bochs-drm"'                      # this host (cp1): a virtual display, ignored
+node_ssh() { case $1 in
+  192.168.120.21) echo "0000:03:00.0 0x1002 0x7448 amdgpu" ;;            # W7900: a supported compute GPU
+  192.168.120.22) echo "0000:03:00.0 0x10de 0x2230 nvidia"; echo "0000:04:00.0 0x1002 0x7422 amdgpu" ;;   # A6000 + a W6400 display card
+  *) echo "0000:00:01.0 0x1234 0x1111 bochs-drm" ;; esac; }
+inv=$(gpu_inventory)
+eq "$(echo "$inv" | wc -l | tr -d ' ')" 2 "GPUs found in the cluster:"
+eq "$(echo "$inv" | grep -c '^gpu-amd 192.168.120.21 amd 0000:03:00.0 7448 amdgpu$')" 1 "the W7900 on gpu-amd:"
+eq "$(echo "$inv" | grep -c '^gpu-nvidia 192.168.120.22 nvidia 0000:03:00.0 2230 nvidia$')" 1 "the A6000 on gpu-nvidia:"
+eq "$(gpu_count nvidia) $(gpu_count amd)" "1 1" "per vendor (the AMD display card is not a compute GPU):"
+
 # a node refuses settings it does not expect
 ( printf 'RUNAI_ADMIN_PASSWORD=x\n' | node_worker >/dev/null 2>&1 ) && fail "node accepted an unexpected setting"
 

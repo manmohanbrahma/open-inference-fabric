@@ -67,6 +67,8 @@ done_() { [ -f "$DONE/$1" ] && [ "$(cat "$DONE/$1")" = "$(stage_want "$1")" ]; }
 stage() { local s=$1; done_ "$s" && return 0
   if [ -s "$DONE/$s" ]; then log "stage: $s ($(cat "$DONE/$s") -> $(stage_want "$s"))"; else log "stage: $s"; fi
   "stage_${s//-/_}"; stage_want "$s" > "$DONE/$s"; }
+stage_after() {   # name other: run stage name right after stage other (a later file can place its stage earlier)
+  local s out=(); for s in "${STAGES[@]}"; do [ "$s" = "$1" ] || out+=("$s"); [ "$s" = "$2" ] && out+=("$1"); done; STAGES=("${out[@]}"); }
 run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; [ "$s" = "${1:-}" ] && return 0; done; }   # [last stage]
 
 # ---------------------------------------------------------------- small helpers

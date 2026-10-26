@@ -12,11 +12,14 @@ amd_targets() { discover_gpus; if [ -n "${AMD_GPUS:-}" ]; then echo "${AMD_GPUS/
 register_stage amd-gpu-operator AMD_GPU_OPERATOR_REV
 register_teardown amd-gpu-operator
 stage_amd_gpu_operator() {
-  local b t chart ws=""; t=$(amd_targets)
-  [ -n "$t" ] || { warn "no AMD compute GPU: AMD GPU Operator skipped"; return 0; }
-  for b in $t; do [ "$(drv "$b")" = amdgpu ] || die "$b is on driver '$(drv "$b")', not amdgpu"
-    [[ " $AMD_WORKSTATION_IDS " == *" $(pci_ids "$b" | cut -d: -f2) "* ]] && ws=yes; done
-  [ -e /dev/kfd ] || die "/dev/kfd is missing: the amdgpu driver did not enable compute"
+  local name addr kind b dev drv chart ws="" n=0
+  while read -r name addr kind b dev drv; do   # every AMD GPU of the cluster, checked on its own node
+    [ "$kind" = amd ] || continue; n=$((n + 1))
+    [ "$drv" = amdgpu ] || die "$name: $b is on driver '$drv', not amdgpu"
+    on_gpu_node "$addr" "test -e /dev/kfd" || die "$name: /dev/kfd is missing: the amdgpu driver did not enable compute"
+    [[ " $AMD_WORKSTATION_IDS " == *" $dev "* ]] && ws=yes
+  done < <(gpu_inventory)
+  [ $n -gt 0 ] || { warn "no AMD compute GPU on any node: AMD GPU Operator skipped"; return 0; }
   rec "TEARDOWN amd-gpu-operator"
   chart=$STATE/charts/gpu-operator-charts-$AMD_GPU_OPERATOR_VERSION.tgz; mkdir -p "$STATE/charts"
   [ -s "$chart" ] || fetch_pinned "https://rocm.github.io/gpu-operator/charts/gpu-operator-charts-$AMD_GPU_OPERATOR_VERSION.tgz" "$AMD_GPU_OPERATOR_SHA256" "$chart"
@@ -62,11 +65,10 @@ teardown_amd_gpu_operator() {   # DeviceConfig, then the chart, then host leftov
 
 register_stage amd-gpu-verify AMD_GPU_OPERATOR_REV
 stage_amd_gpu_verify() {
-  local want node out ip m; want=$(amd_targets | wc -w); [ "$want" -gt 0 ] || return 0
-  node=$(kc get nodes -o jsonpath='{.items[0].metadata.name}')
-  wait_for "amd.com/gpu advertised" 300 10 bash -c \
-    "[ \"\$(kubectl --kubeconfig $KCFG get node $node -o jsonpath='{.status.allocatable.amd\.com/gpu}')\" = $want ]" \
-    || die "the node does not advertise $want amd.com/gpu (kubectl -n $AMD_NS logs ds/default-device-plugin)"
+  local want node out ip m; want=$(gpu_count amd); [ "$want" -gt 0 ] || return 0
+  wait_for "amd.com/gpu advertised ($want in the cluster)" 300 10 gpu_resource_is amd.com/gpu "$want" \
+    || die "the cluster does not advertise $want amd.com/gpu (kubectl -n $AMD_NS logs ds/default-device-plugin)"
+  node=$(node_with amd.com/gpu)
   out=$(kc get node "$node" -o json | python3 -c 'import json,sys; l=json.load(sys.stdin)["metadata"]["labels"]; print(", ".join(f"{k.split("/")[1]}={l[k]}" for k in sorted(l) if k in ("amd.com/gpu.product-name", "amd.com/gpu.vram", "amd.com/gpu.family", "amd.com/gpu.device-id")))')
   ok "node advertises amd.com/gpu: $want (${out:-no AMD labels yet})"
   export BUSYBOX_IMAGE
@@ -88,7 +90,7 @@ stage_amd_gpu_verify() {
 
 register_stage amd-quota
 stage_amd_quota() {   # S-2: Run:ai quotas count amd.com/gpu (team-a quota 1 runs, team-b quota 0 waits on a free GPU)
-  [ -n "$(amd_targets)" ] || return 0
+  [ "$(gpu_count amd)" -gt 0 ] || return 0
   local a b reason
   a=$(runai_api project team-a 1 1) || die "project team-a: $a"
   b=$(runai_api project team-b 0 0) || die "project team-b: $b"
@@ -114,7 +116,7 @@ AMD_TEMPLATES_REV=$(cat "$OIF_HOME"/platform/runai/templates/*.json 2>/dev/null 
 
 register_stage runai-amd-templates AMD_TEMPLATES_REV
 stage_runai_amd_templates() {   # T-115: Run:ai workload templates on amd.com/gpu (extendedResources), next to Run:ai's NVIDIA ones
-  [ -n "$(amd_targets)" ] || return 0
+  [ "$(gpu_count amd)" -gt 0 ] || return 0
   local f out tmp; tmp=$(mktemp)
   export ROCM_PYTORCH_IMAGE JUPYTERLAB_VERSION
   for f in "$OIF_HOME"/platform/runai/templates/*.json; do
@@ -128,7 +130,7 @@ stage_runai_amd_templates() {   # T-115: Run:ai workload templates on amd.com/gp
 register_stage vendor-quota
 stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped at 1 NVIDIA + 1 AMD by a Kubernetes ResourceQuota
   local alloc c out
-  alloc=$(kc get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}/{.items[0].status.allocatable.amd\.com/gpu}')
+  alloc=$(allocatable_sum nvidia.com/gpu)/$(allocatable_sum amd.com/gpu)   # over every node of the cluster
   [ "${alloc%/*}" -ge 1 ] 2>/dev/null && [ "${alloc#*/}" -ge 1 ] 2>/dev/null || { warn "per-vendor quota test needs an NVIDIA and an AMD GPU: skipped"; return 0; }
   c=$(runai_api project team-c 2 2) || die "project team-c: $c"
   export BUSYBOX_IMAGE CUDA_SAMPLE_IMAGE
@@ -150,3 +152,8 @@ stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped 
   kc -n "$c" delete pod gpu-quota-test amd-quota-test --wait=true >> "$LOG" 2>&1
   ok "T-113 passed: per-vendor GPU caps inside one Run:ai project (project team-c and its quota kept)"
 }
+
+# Both GPU operators come before the platform: the AMD one right after prometheus (its exporter's ServiceMonitor
+# needs the monitoring CRDs), so Run:ai and the rest find both vendors' GPUs
+stage_after amd-gpu-operator prometheus
+stage_after amd-gpu-verify amd-gpu-operator

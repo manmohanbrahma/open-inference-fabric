@@ -4,7 +4,7 @@
 # OIF_NODES="192.168.120.11:control 192.168.120.12:control ... 192.168.120.21:worker" (empty: single node); an entry may
 # carry a label for logs and records, "cp1=192.168.120.11:control". Kubernetes names each node by its hostname anyway.
 
-NODE_STAGES=(preflight host-packages kernel containerd nvidia-driver gpu-isolation reboot host-verify k8s-packages)
+NODE_STAGES=(preflight host-packages kernel containerd nvidia-driver amd-firmware gpu-isolation reboot host-verify k8s-packages)
 NODE_SETTINGS=(INSTALL_DIR INSTALL_USER NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS REBOOT_OK)   # all a node stage reads
 NODE_SRC=/var/lib/oif/src           # oif's copy on a node; inside the node's state folder, so uninstall removes it
 CLUSTER_KEY=$STATE/ssh/id_ed25519   # oif's own key, created on the first node (root only)
@@ -240,3 +240,33 @@ node_join() {   # on a node: join settings on stdin, then kubeadm join (recorded
   [ "$JOIN_ROLE" = control ] && [ -n "$OIF_API_VIP" ] && kube_vip_manifest /etc/kubernetes/admin.conf "$NODE_IP"
   ok "joined the cluster at $API_ENDPOINT:6443 as $JOIN_ROLE"
 }
+
+# ---------------------------------------------------------------- GPUs across the cluster (T-122)
+# The display-class PCI devices of one machine: "bdf vendor device driver" (sh, so the same text runs on every node)
+GPU_SCAN='for d in /sys/bus/pci/devices/*; do case $(cat $d/class) in 0x03*) l=$(readlink $d/driver); echo "${d##*/} $(cat $d/vendor) $(cat $d/device) ${l##*/}";; esac; done'
+gpu_inventory() {   # "label address kind bdf device driver" per NVIDIA or supported AMD compute GPU of every node
+  local name addr role out bdf v d drv kind
+  if ! multi_node; then   # one host: the GPUs chosen in the settings
+    local b; for b in $(nv_targets); do echo "$(hostname -s) $HOST_IP nvidia $b $(pci_ids "$b" | cut -d: -f2) $(drv "$b")"; done
+    for b in $(amd_targets); do echo "$(hostname -s) $HOST_IP amd $b $(pci_ids "$b" | cut -d: -f2) $(drv "$b")"; done
+    return 0
+  fi
+  while read -r -u 3 name addr role; do
+    if [ -n "$(host_prefix "$addr")" ]; then out=$(sh -c "$GPU_SCAN"); else out=$(node_ssh "$addr" "$GPU_SCAN") || die "cannot list the GPUs of $name ($addr)"; fi
+    while read -r bdf v d drv; do
+      [ -n "$bdf" ] || continue
+      case $v in 0x10de) kind=nvidia ;; 0x1002) [[ " $AMD_COMPUTE_IDS " == *" ${d#0x} "* ]] || continue; kind=amd ;; *) continue ;; esac
+      echo "$name $addr $kind $bdf ${d#0x} ${drv:-none}"
+    done <<< "$out"
+  done 3< <(nodes_list)
+}
+gpu_count() { gpu_inventory | awk -v k="$1" '$3 == k {n++} END {print n + 0}'; }   # nvidia | amd
+allocatable_sum() {   # resource name: the sum over all nodes, e.g. nvidia.com/gpu
+  kc get nodes -o json | python3 -c 'import json,sys; r=sys.argv[1]; print(sum(int(n["status"].get("allocatable",{}).get(r,"0")) for n in json.load(sys.stdin)["items"]))' "$1"; }
+node_with() {   # resource name: the first node that offers it
+  kc get nodes -o json | python3 -c 'import json,sys; r=sys.argv[1]; print(next((n["metadata"]["name"] for n in json.load(sys.stdin)["items"] if int(n["status"].get("allocatable",{}).get(r,"0"))>0), ""))' "$1"; }
+on_gpu_node() {   # address command: run where that GPU is (this host or another node)
+  if [ -n "$(host_prefix "$1")" ]; then bash -c "$2"; else node_ssh "$1" "$2"; fi; }
+gpu_resource_is() { [ "$(allocatable_sum "$1")" = "$2" ]; }   # resource count: the cluster offers exactly that many
+nodes_rev() {   # the node stages' list and code: a change reaches every node on the next install
+  { echo "${NODE_STAGES[*]}"; cat "$OIF_HOME"/installer/stages/[0-3]0-*.sh; } | sha256sum | cut -c1-12; }

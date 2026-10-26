@@ -9,7 +9,7 @@ One script per task that needs real machines. Each prints `PASS` or `FAIL` per c
 
 What each checks:
 
-- **t120-nodes.sh**: several nodes in the settings and this host first; the cluster key exists and is root-only; for every other node: reachable with the cluster key alone (no agent) and sudo without a password, recorded for uninstall, oif copied, all nine node stages done, only the node settings sent (no passwords or tokens), its own change record; on NVIDIA nodes the driver loaded and nouveau blocked. `--reboot NODE` reboots that node the way the node runner does and requires it back within 15 minutes.
+- **t120-nodes.sh**: several nodes in the settings and this host first; the cluster key exists and is root-only; for every other node: reachable with the cluster key alone (no agent) and sudo without a password, recorded for uninstall, oif copied, every node stage done, only the node settings sent (no passwords or tokens), its own change record; on NVIDIA nodes the driver loaded and nouveau blocked. `--reboot NODE` reboots that node the way the node runner does and requires it back within 15 minutes.
 
 - **t121-cluster.sh**: every node Ready, the control-plane count, no node tainted against workloads, one etcd member and API server per control-plane node, no join tokens or uploaded certificates left, kubeconfig on the API endpoint; with a shared address: the API answers there and one kube-vip runs per control-plane node. `--failover` takes kube-vip off the node holding the address, requires another node to take it with the API still answering, then restores it.
 

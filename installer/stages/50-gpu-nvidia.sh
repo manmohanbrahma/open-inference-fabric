@@ -6,7 +6,7 @@ GPU_NS=gpu-operator
 register_stage gpu-operator GPU_OPERATOR_VERSION   # a new version in versions.env upgrades it
 register_teardown gpu-operator
 stage_gpu_operator() {
-  [ -n "$(nv_targets)" ] || { warn "no NVIDIA GPU: GPU Operator skipped"; return 0; }
+  [ "$(gpu_count nvidia)" -gt 0 ] || { warn "no NVIDIA GPU on any node: GPU Operator skipped"; return 0; }
   mkdir -p "$STATE/charts"; local chart=$STATE/charts/gpu-operator-$GPU_OPERATOR_VERSION.tgz
   [ -s "$chart" ] || fetch_pinned "https://helm.ngc.nvidia.com/nvidia/charts/gpu-operator-$GPU_OPERATOR_VERSION.tgz" "$GPU_OPERATOR_SHA256" "$chart"
   rec "TEARDOWN gpu-operator"
@@ -34,11 +34,10 @@ nvidia_runtime_leftovers() {   # called by teardown_containerd: GPU pods need nv
 
 register_stage gpu-verify GPU_OPERATOR_VERSION
 stage_gpu_verify() {
-  [ -n "$(nv_targets)" ] || return 0
-  local want n node; want=$(nv_targets | wc -w); node=$(kc get nodes -o jsonpath='{.items[0].metadata.name}')
-  wait_for "nvidia.com/gpu advertised" 300 10 bash -c \
-    "[ \"\$(kubectl --kubeconfig $KCFG get node $node -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')\" = $want ]" \
-    || die "the node does not advertise $want nvidia.com/gpu (kubectl describe node $node)"
+  local want n node; want=$(gpu_count nvidia); [ "$want" -gt 0 ] || return 0
+  wait_for "nvidia.com/gpu advertised ($want in the cluster)" 300 10 gpu_resource_is nvidia.com/gpu "$want" \
+    || die "the cluster does not advertise $want nvidia.com/gpu (kubectl describe nodes | grep -A6 Allocatable)"
+  node=$(node_with nvidia.com/gpu)
   n=$(kc get node "$node" -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.product}')
   [ -n "$n" ] || die "GPU feature discovery labels missing (kubectl get node $node --show-labels)"
   ok "node advertises nvidia.com/gpu: $want ($n)"
