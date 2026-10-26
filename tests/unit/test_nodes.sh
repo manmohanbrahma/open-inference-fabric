@@ -10,6 +10,11 @@ GOOD="cp1=192.168.120.11:control cp2=192.168.120.12:control cp3=192.168.120.13:c
 ok_ v_nodes "$GOOD"
 ok_ v_nodes ""                                                            # single node
 ok_ v_nodes "cp1=192.168.120.11:control gpu=192.168.120.21:worker"        # one control plane
+ok_ v_nodes "192.168.120.11:control 192.168.120.12:control 192.168.120.13:control 192.168.120.21:worker"   # addresses only
+ok_ v_nodes "cp1=192.168.120.11:control 192.168.120.21:worker"            # labels optional, mixed
+no_ v_nodes "192.168.120.11:control 192.168.120.11:worker"                # address twice, no labels
+OIF_NODES="192.168.120.11:control gpu=192.168.120.21:worker 192.168.120.22:worker"
+eq "$(nodes_list | paste -sd'|')" "192.168.120.11 192.168.120.11 control|gpu 192.168.120.21 worker|192.168.120.22 192.168.120.22 worker" "labels default to the address:"
 no_ v_nodes "cp1=192.168.120.11:control"                                  # a list of one
 no_ v_nodes "gpu=192.168.120.21:worker cp1=192.168.120.11:control"        # first must be a control-plane node
 no_ v_nodes "cp2=192.168.120.12:control cp1=192.168.120.11:control"       # first must be this host

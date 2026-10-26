@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # Multi-node (ADR-017): the admin runs oif on the first control-plane node; it reaches the other nodes over SSH with
 # its own cluster key, copies itself there and runs the node stages, each node keeping its own change record.
-# OIF_NODES="cp1=192.168.120.11:control cp2=...:control gpu-amd=192.168.120.21:worker" (empty: single node).
+# OIF_NODES="192.168.120.11:control 192.168.120.12:control ... 192.168.120.21:worker" (empty: single node); an entry may
+# carry a label for logs and records, "cp1=192.168.120.11:control". Kubernetes names each node by its hostname anyway.
 
 NODE_STAGES=(preflight host-packages kernel containerd nvidia-driver gpu-isolation reboot host-verify k8s-packages)
 NODE_SETTINGS=(INSTALL_DIR INSTALL_USER NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS REBOOT_OK)   # all a node stage reads
@@ -10,20 +11,21 @@ CLUSTER_KEY=$STATE/ssh/id_ed25519   # oif's own key, created on the first node (
 NODE_REBOOT_RC=75                   # a node stage needs a reboot: the first node reboots the node and runs it again
 
 multi_node() { [ -n "${OIF_NODES:-}" ]; }
-nodes_list() {   # print "name address role" per node, in the order given
-  local e; for e in ${OIF_NODES:-}; do printf '%s %s %s\n' "${e%%=*}" "$(e=${e#*=}; echo "${e%%:*}")" "${e##*:}"; done; }
+nodes_list() {   # print "label address role" per node, in the order given; the label is the address when none is given
+  local e a; for e in ${OIF_NODES:-}; do a=${e#*=}; a=${a%%:*}
+    if [[ $e == *=* ]]; then printf '%s %s %s\n' "${e%%=*}" "$a" "${e##*:}"; else printf '%s %s %s\n' "$a" "$a" "${e##*:}"; fi; done; }
 other_nodes() { nodes_list | tail -n +2; }   # every node but the first, which runs oif
 node_user() { echo "${OIF_NODE_USER:-$INSTALL_USER}"; }
 
-v_nodes() {   # name=address:role ..., the first one this host and a control-plane node
+v_nodes() {   # [label=]address:role ..., the first one this host and a control-plane node
   [ -z "$1" ] && return 0
   local e name addr role n=0 ctl=0 seen=" "
   for e in $1; do
-    [[ $e =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)=([0-9.]+):(control|worker)$ ]] || { echo "'$e' is not name=address:control|worker"; return 1; }
-    name=${BASH_REMATCH[1]} addr=${BASH_REMATCH[3]} role=${BASH_REMATCH[4]}
+    [[ $e =~ ^(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)=)?([0-9.]+):(control|worker)$ ]] || { echo "'$e' is not [label=]address:control|worker"; return 1; }
+    addr=${BASH_REMATCH[4]} role=${BASH_REMATCH[5]} name=${BASH_REMATCH[2]:-${BASH_REMATCH[4]}}
     valid_ip "$addr" || { echo "$name: '$addr' is not an IPv4 address"; return 1; }
     [[ $seen == *" $name "* || $seen == *" $addr "* ]] && { echo "$name or $addr is listed twice"; return 1; }
-    seen+="$name $addr "
+    seen+="$name "; [ "$name" = "$addr" ] || seen+="$addr "
     if [ $n = 0 ]; then
       [ "$role" = control ] || { echo "the first node ($name) runs oif and must be a control-plane node"; return 1; }
       [ -n "$(host_prefix "$addr")" ] || { echo "the first node ($name, $addr) must be this host: run oif there"; return 1; }

@@ -148,7 +148,7 @@ config_collect() {   # all questions first; nothing on the host changes here
   [ -z "$used" ] && ok "MetalLB range $METALLB_RANGE: no address answers ping" || warn "these addresses answer ping and may be in use:$used"
 
   echo; echo "${c_b}Cluster nodes${c_0} (ADR-017; empty = this host only)"
-  echo "   name=address:role for each node, this host first, e.g. cp1=192.168.120.11:control gpu-amd=192.168.120.21:worker"
+  echo "   address:role for each node, this host first, e.g. 192.168.120.11:control 192.168.120.21:worker (labels optional: cp1=192.168.120.11:control)"
   valid_or_ask OIF_NODES "   Nodes" "" v_nodes
   if multi_node; then
     valid_or_ask OIF_API_VIP "   Free address for the Kubernetes API on the control-plane nodes" "" v_vip
