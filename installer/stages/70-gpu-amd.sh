@@ -7,6 +7,9 @@ AMD_WORKSTATION_IDS="7448 744a 745e"     # Radeon PRO W7900 / W7900 dual slot / 
 AMD_ECC_UMC_THRESHOLD=4000000000
 AMD_GPU_OPERATOR_REV=$AMD_GPU_OPERATOR_VERSION-r3   # bump the suffix when platform/gpu-amd/ changes: reruns the stages
 
+amd_exporter_ip() {   # the first AMD metrics exporter pod (its Service answers only on AMD nodes)
+  kc -n "$AMD_NS" get endpointslices -l kubernetes.io/service-name=default-metrics-exporter \
+    -o jsonpath='{.items[*].endpoints[*].addresses[0]}' 2>/dev/null | awk '{print $1}'; }
 amd_targets() { discover_gpus; if [ -n "${AMD_GPUS:-}" ]; then echo "${AMD_GPUS//,/ }"; else echo "${AMD_BDFS[*]}"; fi; }
 
 register_stage amd-gpu-operator AMD_GPU_OPERATOR_REV
@@ -80,8 +83,10 @@ stage_amd_gpu_verify() {
   sed 's/^/    /' <<< "$out" | tee -a "$TLOG"
   grep -q '/dev/kfd' <<< "$out" && grep -q 'renderD' <<< "$out" || die "the pod did not get the AMD GPU's devices (kubectl -n oif-amd-test describe pod amd)"
   kc delete namespace oif-amd-test --wait=true >> "$LOG" 2>&1 || warn "test namespace oif-amd-test not deleted"
-  ip=$(kc -n "$AMD_NS" get svc default-metrics-exporter -o jsonpath='{.spec.clusterIP}' 2>/dev/null) || true   # <DeviceConfig>-metrics-exporter
-  [ -n "$ip" ] || die "AMD metrics exporter service default-metrics-exporter not found (kubectl -n $AMD_NS get svc)"
+  # The exporter's Service (<DeviceConfig>-metrics-exporter) has internalTrafficPolicy Local: its address answers only on
+  # an AMD node. Ask the exporter pod itself (Prometheus scrapes the pods too).
+  ip=$(amd_exporter_ip) || true
+  [ -n "$ip" ] || die "no AMD metrics exporter pod behind service default-metrics-exporter (kubectl -n $AMD_NS get pods,endpointslices)"
   wait_for "AMD GPU metrics" 180 10 bash -c "curl -fsS -m 10 http://$ip:5000/metrics | grep -q '^gpu_'" || die "no AMD GPU metrics at $ip:5000"
   m=$(curl -fsS -m 10 "http://$ip:5000/metrics" | grep -E '^(gpu_edge_temperature|gpu_junction_temperature|gpu_power_usage|gpu_used_vram|gpu_total_vram|gpu_health)\{' \
     | sed -E 's/\{[^}]*\}//' | awk '{printf "%s=%s ", $1, $2}')

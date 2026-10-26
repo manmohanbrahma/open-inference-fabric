@@ -71,7 +71,7 @@ kc delete namespace oif-t122-nvidia oif-t122-amd --wait=false >/dev/null 2>&1
 
 ip=$(kc -n gpu-operator get svc nvidia-dcgm-exporter -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
 check "DCGM exporter reports the NVIDIA GPU" bash -c "curl -fsS -m 10 http://$ip:9400/metrics | grep -q '^DCGM_FI_DEV_GPU_TEMP'"
-ip=$(kc -n kube-amd-gpu get svc default-metrics-exporter -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+ip=$(amd_exporter_ip)   # the Service has internalTrafficPolicy Local: ask the exporter pod
 check "AMD metrics exporter reports the AMD GPU" bash -c "curl -fsS -m 10 http://$ip:5000/metrics | grep -q '^gpu_edge_temperature'"
 
 echo
