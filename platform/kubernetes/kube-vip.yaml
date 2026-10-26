@@ -1,0 +1,39 @@
+# kube-vip as a static pod on each control-plane node (ADR-017): holds the Kubernetes API address ${OIF_API_VIP} on the
+# leader by ARP. Control plane only; MetalLB keeps the Service addresses. Rendered by oif (stages kubernetes, k8s-join).
+# kubeconfig: super-admin.conf on the first node while kubeadm init runs (admin.conf has no rights yet, Kubernetes
+# 1.29+), admin.conf afterwards and on the other control-plane nodes.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+spec:
+  containers:
+    - name: kube-vip
+      image: ${KUBE_VIP_IMAGE}
+      imagePullPolicy: IfNotPresent
+      args: [manager]
+      env:
+        - {name: vip_arp, value: "true"}
+        - {name: port, value: "6443"}
+        - {name: vip_interface, value: "${VIP_INTERFACE}"}
+        - {name: vip_subnet, value: "32"}
+        - {name: cp_enable, value: "true"}
+        - {name: cp_namespace, value: kube-system}
+        - {name: svc_enable, value: "false"}
+        - {name: vip_leaderelection, value: "true"}
+        - {name: vip_leaseduration, value: "5"}
+        - {name: vip_renewdeadline, value: "3"}
+        - {name: vip_retryperiod, value: "1"}
+        - {name: address, value: "${OIF_API_VIP}"}
+      securityContext:
+        capabilities:
+          add: [NET_ADMIN, NET_RAW]
+      volumeMounts:
+        - {name: kubeconfig, mountPath: /etc/kubernetes/admin.conf}
+  hostAliases:
+    - {ip: 127.0.0.1, hostnames: [kubernetes]}
+  hostNetwork: true
+  volumes:
+    - name: kubeconfig
+      hostPath: {path: "${KUBE_VIP_KUBECONFIG}", type: File}

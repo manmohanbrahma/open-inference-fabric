@@ -1,4 +1,5 @@
-# kubeadm configuration for a single-node cluster whose control plane also runs workloads.
+# kubeadm configuration for the first control-plane node; its control plane also runs workloads. On a single node
+# API_ENDPOINT is the node's own address; with three control-plane nodes it is OIF_API_VIP, held by kube-vip.
 # Rendered by oif (stage kubernetes); the placeholders come from versions.env and the saved settings.
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
@@ -16,7 +17,9 @@ apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: v${KUBERNETES_VERSION}
 clusterName: oif
-controlPlaneEndpoint: ${HOST_IP}:6443
+controlPlaneEndpoint: ${API_ENDPOINT}:6443
+apiServer:
+  certSANs: ["${API_ENDPOINT}", "${HOST_IP}"]
 networking:
   podSubnet: ${POD_CIDR}
   serviceSubnet: ${SERVICE_CIDR}

@@ -1,0 +1,20 @@
+# kubeadm join for an additional control-plane node (ADR-017). Rendered on the node by 'oif _node-join' into the
+# root-only state folder and deleted after the join: it holds a bootstrap token and the key to the uploaded certificates.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: ${API_ENDPOINT}:6443
+    token: ${JOIN_TOKEN}
+    caCertHashes: [${JOIN_CA_HASH}]
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: ${NODE_IP}
+  taints: []                    # no control-plane taint: the platform (Run:ai) runs on the control-plane nodes too
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: ${NODE_IP}
+    bindPort: 6443
+  certificateKey: ${JOIN_CERT_KEY}

@@ -1,0 +1,15 @@
+# kubeadm join for a worker node (ADR-017). Rendered on the node by 'oif _node-join' into the root-only state folder
+# and deleted after the join: it holds a short-lived bootstrap token.
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: ${API_ENDPOINT}:6443
+    token: ${JOIN_TOKEN}
+    caCertHashes: [${JOIN_CA_HASH}]
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+  kubeletExtraArgs:
+    - name: node-ip
+      value: ${NODE_IP}
+  taints: []

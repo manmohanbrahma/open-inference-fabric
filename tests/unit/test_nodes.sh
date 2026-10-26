@@ -91,6 +91,32 @@ eq "$(grep -c 'sudo systemctl reboot' "$CALLS")" 2 "reboots before giving up:"
 node_ssh() { cat >/dev/null; return 1; }
 ( node_install gpu-amd 192.168.120.21 >/dev/null 2>&1 ) && fail "a failing node must stop the install"
 
+# where every node reaches the API: the shared address with three control planes, else the first node
+OIF_API_VIP=192.168.120.10; eq "$(api_endpoint)" 192.168.120.10 "API endpoint with a VIP:"
+OIF_API_VIP=""; eq "$(api_endpoint)" 192.168.120.11 "API endpoint without a VIP:"
+
+# the join settings a node accepts: each value in its exact form, nothing executed
+J='JOIN_ROLE=control
+API_ENDPOINT=192.168.120.10
+JOIN_TOKEN=abcdef.0123456789abcdef
+JOIN_CA_HASH=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+JOIN_CERT_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+NODE_IP=192.168.120.12
+OIF_API_VIP=192.168.120.10'
+for bad in 'JOIN_ROLE=master' 'JOIN_TOKEN=$(touch /tmp/oif-pwned)' 'NODE_IP=1.2.3' 'JOIN_CA_HASH=md5:00' 'HF_TOKEN=x'; do
+  ( printf '%s\n' "$bad" | node_join >/dev/null 2>&1 ) && fail "join setting accepted: $bad"
+done
+[ -e /tmp/oif-pwned ] && fail "a join value was executed"
+# valid settings reach kubeadm join (stubbed, like systemctl: nothing on this host changes); a worker writes no kube-vip pod
+kubeadm() { echo "kubeadm $*" >> "$SANDBOX/kubeadm"; return 0; }
+systemctl() { :; }
+K8S_TEMPLATES=$ROOT/platform/kubernetes
+( printf '%s\n' "${J/JOIN_ROLE=control/JOIN_ROLE=worker}" | node_join >/dev/null 2>&1 ) || fail "valid join settings refused"
+grep -q "join --config" "$SANDBOX/kubeadm" 2>/dev/null || fail "valid join settings did not reach kubeadm join"
+recorded "TEARDOWN kubernetes" || fail "a joined node must record its Kubernetes teardown"
+[ -e "$OIF_STATE/kubeadm-join.yaml" ] && fail "the join configuration (token) must be deleted after the join"
+unset -f kubeadm systemctl
+
 # a node refuses settings it does not expect
 ( printf 'RUNAI_ADMIN_PASSWORD=x\n' | node_worker >/dev/null 2>&1 ) && fail "node accepted an unexpected setting"
 

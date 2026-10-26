@@ -39,7 +39,7 @@ main() {
   case $verb in
     help|-h|--help) usage; return 0 ;;
     version|--version) echo "oif $OIF_VERSION"; return 0 ;;
-    check|plan|status|install|uninstall|_worker|_uninstall-worker|_resume|_node|_node-uninstall) ;;
+    check|plan|status|install|uninstall|_worker|_uninstall-worker|_resume|_node|_node-join|_node-uninstall) ;;
     *) usage_error "unknown command '$verb'" ;;
   esac
   [ "$(id -u)" = 0 ] || [ "$verb" = check ] || { echo "run with sudo: sudo $0 $verb"; exit 2; }
@@ -58,6 +58,7 @@ main() {
     _uninstall-worker) INTERACTIVE=0; OIF_RERUN=uninstall; LOG=$UNINSTALL_LOG; exec >>"$LOG" 2>&1; TLOG=/dev/null; uninstall_run ;;
     # on another node of a multi-node cluster, started over SSH by the first node (ADR-017); output goes back to it
     _node) INTERACTIVE=0; node_worker ;;
+    _node-join) INTERACTIVE=0; node_join ;;
     _node-uninstall) INTERACTIVE=0; OIF_RERUN=uninstall; LOG=$UNINSTALL_LOG; TLOG=$UNINSTALL_LOG; : > "$LOG"; uninstall_run ;;
   esac
 }

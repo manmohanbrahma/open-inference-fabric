@@ -164,3 +164,77 @@ node_uninstall() {   # address user: the node's own uninstall, then oif's copy a
     ok "node $a: back to its OS default"
   else warn "node $a is not reachable: uninstall it there (sudo $NODE_SRC/oif uninstall) when it is back"; fi
 }
+
+# ---------------------------------------------------------------- the cluster across nodes (T-121)
+api_endpoint() { echo "${OIF_API_VIP:-$HOST_IP}"; }   # where every node reaches the Kubernetes API
+iface_of() { ip -o -4 addr show | awk -v a="$1" '{split($4, p, "/")} p[1] == a {print $2; exit}'; }
+kube_vip_manifest() {   # kubeconfig node-address: the kube-vip static pod for this control-plane node
+  local f=/etc/kubernetes/manifests/kube-vip.yaml
+  VIP_INTERFACE=$(iface_of "$2"); [ -n "$VIP_INTERFACE" ] || die "no network interface holds $2"
+  KUBE_VIP_KUBECONFIG=$1; export VIP_INTERFACE KUBE_VIP_KUBECONFIG KUBE_VIP_IMAGE OIF_API_VIP
+  mkdir -p "${f%/*}"
+  render "$K8S_TEMPLATES/kube-vip.yaml" > "$f.oif" || die "cannot render the kube-vip manifest"
+  mv "$f.oif" "$f"   # /etc/kubernetes goes with the Kubernetes teardown
+}
+
+
+stage_k8s_join() {   # registered in 40-kubernetes.sh, after kubernetes: every other node joins the cluster
+  multi_node || { ok "single node"; return 0; }
+  local name addr role token key hash host rc
+  hash=sha256:$(openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl pkey -pubin -outform der | sha256sum | cut -d' ' -f1)
+  while read -r -u 3 name addr role; do
+    host=$(node_ssh "$addr" hostname) || die "$name ($addr) is not reachable with the cluster key"
+    if kc get node "$host" >/dev/null 2>&1; then ok "$name ($host) is already in the cluster"; continue; fi
+    log "$name ($addr) joins as $role"
+    token=$(kubeadm token create --ttl 30m --kubeconfig "$KCFG") || die "cannot create a join token"
+    key=""
+    if [ "$role" = control ]; then   # the control-plane certificates, encrypted, for two hours; k8s-tokens deletes them
+      key=$(kubeadm init phase upload-certs --upload-certs --config "$STATE/kubeadm.yaml" 2>>"$LOG" | tail -1)
+      [[ $key =~ ^[0-9a-f]{64}$ ]] || die "could not upload the control-plane certificates"
+    fi
+    node_push "$addr"
+    rc=0
+    { printf 'JOIN_ROLE=%s\nAPI_ENDPOINT=%s\nJOIN_TOKEN=%s\nJOIN_CA_HASH=%s\nJOIN_CERT_KEY=%s\nNODE_IP=%s\nOIF_API_VIP=%s\n' \
+        "$role" "$(api_endpoint)" "$token" "$hash" "$key" "$addr" "${OIF_API_VIP:-}"; } \
+      | NODE_SSH_STDIN=1 node_ssh "$addr" "sudo $NODE_SRC/oif _node-join" 2>&1 | redact | sed -u "s/^/  [$name] /" | tee -a "$TLOG" \
+      || rc=${PIPESTATUS[1]}
+    kubeadm token delete --kubeconfig "$KCFG" "${token%%.*}" >/dev/null 2>&1 || true
+    [ "$rc" = 0 ] || die "$name could not join (on the node: sudo tail -50 $LOG)"
+    wait_for "$name ($host) registered" 180 5 kc get node "$host" || die "$name joined but is not listed (kubectl get nodes)"
+  done 3< <(other_nodes)
+}
+
+node_join() {   # on a node: join settings on stdin, then kubeadm join (recorded, so the node's uninstall reverses it)
+  local line k
+  state_init; config_load_saved
+  local v ip='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+  while IFS= read -r line; do k=${line%%=*} v=${line#*=}
+    case $k in   # each value checked for its exact form, never evaluated
+      JOIN_ROLE) [[ $v =~ ^(control|worker)$ ]] ;;
+      API_ENDPOINT|NODE_IP) [[ $v =~ $ip ]] ;;
+      OIF_API_VIP) [[ -z $v || $v =~ $ip ]] ;;
+      JOIN_TOKEN) [[ $v =~ ^[a-z0-9]{6}\.[a-z0-9]{16}$ ]] ;;
+      JOIN_CA_HASH) [[ $v =~ ^sha256:[0-9a-f]{64}$ ]] ;;
+      JOIN_CERT_KEY) [[ -z $v || $v =~ ^[0-9a-f]{64}$ ]] ;;
+      *) false ;;
+    esac || die "unexpected join setting '$k'"
+    printf -v "$k" '%s' "$v"
+  done
+  if [ -f /etc/kubernetes/kubelet.conf ]; then ok "already joined"; return 0; fi
+  rec "TEARDOWN kubernetes"
+  systemctl enable kubelet >/dev/null 2>&1
+  export API_ENDPOINT JOIN_TOKEN JOIN_CA_HASH JOIN_CERT_KEY NODE_IP
+  local tpl=kubeadm-join.yaml cfg=$STATE/kubeadm-join.yaml
+  [ "$JOIN_ROLE" = control ] && tpl=kubeadm-join-control.yaml
+  ( umask 077; render "$K8S_TEMPLATES/$tpl" > "$cfg" ) || die "cannot render the join configuration"
+  log "kubeadm join as $JOIN_ROLE (pulls the images, 1-3 min)"
+  if ! kubeadm join --config "$cfg" > "$STATE/kubeadm-join.log" 2>&1; then
+    rm -f "$cfg"; grep -E '^\[|error|ERROR' "$STATE/kubeadm-join.log" | tail -20 | redact
+    kubeadm reset -f >> "$STATE/kubeadm-join.log" 2>&1 || true
+    die "kubeadm join failed (sudo less $STATE/kubeadm-join.log; journalctl -u kubelet)"
+  fi
+  rm -f "$cfg"
+  grep -E '^\[(preflight|kubelet-start|control-plane-join|mark-control-plane)\]' "$STATE/kubeadm-join.log" | redact | tail -6
+  [ "$JOIN_ROLE" = control ] && [ -n "$OIF_API_VIP" ] && kube_vip_manifest /etc/kubernetes/admin.conf "$NODE_IP"
+  ok "joined the cluster at $API_ENDPOINT:6443 as $JOIN_ROLE"
+}

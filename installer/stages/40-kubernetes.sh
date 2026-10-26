@@ -38,8 +38,11 @@ stage_kubernetes() {
   ok "pod network $POD_CIDR, services $SERVICE_CIDR (no overlap with this host's networks)"
   if [ ! -f "$KCFG" ]; then
     rec "TEARDOWN kubernetes"
-    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS
+    API_ENDPOINT=$(api_endpoint)
+    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS API_ENDPOINT
     render "$K8S_TEMPLATES/kubeadm.yaml" > "$STATE/kubeadm.yaml" || die "cannot render the kubeadm configuration"
+    # several control-plane nodes: kube-vip holds the API address; during init it needs super-admin.conf (ADR-017)
+    [ -n "${OIF_API_VIP:-}" ] && kube_vip_manifest /etc/kubernetes/super-admin.conf "$HOST_IP"
     systemctl enable kubelet >/dev/null 2>&1
     log "kubeadm init (pulls the control-plane images, 2-5 min)"
     # its output names join credentials: kept in the root-only state folder, not in the readable install log
@@ -50,23 +53,29 @@ stage_kubernetes() {
     fi
     grep -E '^\[(init|preflight|certs\] Generating "ca"|control-plane-check\] kube|addons)' "$STATE/kubeadm-init.log" | redact
   fi
+  if [ -n "${OIF_API_VIP:-}" ] && grep -q super-admin.conf /etc/kubernetes/manifests/kube-vip.yaml 2>/dev/null; then
+    kube_vip_manifest /etc/kubernetes/admin.conf "$HOST_IP"   # init is done: back to the normal admin credentials
+    ok "kube-vip holds the API address $OIF_API_VIP"
+  fi
   local kd=$UHOME/.kube
   [ -d "$kd" ] || rec "DIR $kd"
   backup_file "$kd/config"; install -d -m 700 -o "$INSTALL_USER" -g "$(id -gn "$INSTALL_USER")" "$kd"
   install -m 600 -o "$INSTALL_USER" -g "$(id -gn "$INSTALL_USER")" "$KCFG" "$kd/config"
   wait_for "API server answering" 300 5 kc get --raw /readyz || die "the API server did not come up (journalctl -u kubelet)"
-  ok "Kubernetes $KUBERNETES_VERSION control plane on $HOST_IP:6443; kubectl works for $INSTALL_USER"
+  ok "Kubernetes $KUBERNETES_VERSION control plane on $(api_endpoint):6443; kubectl works for $INSTALL_USER"
 }
 
+register_stage k8s-join     # multi-node: the other control-plane nodes and the workers join (installer/lib/60-nodes.sh)
+
 register_stage k8s-tokens
-stage_k8s_tokens() {   # one node: nothing joins it, so no join tokens or uploaded certificates are kept
+stage_k8s_tokens() {   # after the joins (if any): no join tokens or uploaded certificates are kept
   local t
   for t in $(kubeadm token list --kubeconfig "$KCFG" 2>/dev/null | awk 'NR>1 {print $1}' | cut -d. -f1); do
     kubeadm token delete --kubeconfig "$KCFG" "$t" >/dev/null 2>&1 || warn "join token $t not deleted"; done
   kc -n kube-system delete secret kubeadm-certs --ignore-not-found >/dev/null
   [ -z "$(kubeadm token list --kubeconfig "$KCFG" 2>/dev/null | awk 'NR>1')" ] || die "join tokens remain (sudo kubeadm token list)"
   redact_file "$LOG"   # installs before this stage existed copied kubeadm's join command into the log
-  ok "no join tokens or uploaded certificates left (single node)"
+  ok "no join tokens or uploaded certificates left ($(multi_node && echo 'all nodes joined' || echo 'single node'))"
 }
 
 teardown_kubernetes() {   # everything kubeadm and the network plugin put on the host
@@ -121,7 +130,9 @@ stage_calico() {
   rm -rf "$tmp"
   wait_for "Calico running" 600 10 bash -c "kubectl --kubeconfig $KCFG get tigerastatus calico -o jsonpath='{.status.conditions[?(@.type==\"Available\")].status}' | grep -qx True" \
     || die "Calico is not available (kubectl get tigerastatus; kubectl -n calico-system get pods)"
-  wait_for "node Ready" 300 5 bash -c "kubectl --kubeconfig $KCFG get nodes --no-headers | awk '{print \$2}' | grep -qx Ready" || die "the node is not Ready (kubectl describe node)"
+  local want; want=$(multi_node && nodes_list | wc -l || echo 1)
+  wait_for "all $want node(s) Ready" 600 5 bash -c "kubectl --kubeconfig $KCFG get nodes --no-headers | awk '\$2 == \"Ready\" {n++} END {exit !(n == $want)}'" \
+    || die "not every node is Ready (kubectl get nodes; kubectl describe node)"
 }
 
 register_stage storage
