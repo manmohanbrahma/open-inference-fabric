@@ -4,7 +4,7 @@
 # control-plane node takes the address and the API keeps answering, then puts kube-vip back.
 #   sudo tests/lab/t121-cluster.sh [--failover]
 set -uo pipefail
-ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+ROOT=$(cd "$(dirname "$0")/../.." && pwd); OIF_HOME=$ROOT; SELF=$ROOT/oif
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 2; }
 # shellcheck source=../../versions.env
 . "$ROOT/versions.env"

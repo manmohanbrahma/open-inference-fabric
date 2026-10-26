@@ -5,9 +5,12 @@ One script per task that needs real machines. Each prints `PASS` or `FAIL` per c
 | Script | Task | Run on | After |
 | --- | --- | --- | --- |
 | `t120-nodes.sh [--reboot NODE]` | T-120 node list, cluster key, node runner | the first node, with sudo | `sudo ./oif install --until nodes` (or a full install) |
+| `t121-cluster.sh [--failover]` | T-121 highly available Kubernetes across the nodes | the first node, with sudo | `sudo ./oif install --until k8s-verify` (or later) |
 
 What each checks:
 
 - **t120-nodes.sh**: several nodes in the settings and this host first; the cluster key exists and is root-only; for every other node: reachable with the cluster key alone (no agent) and sudo without a password, recorded for uninstall, oif copied, all nine node stages done, only the node settings sent (no passwords or tokens), its own change record; on NVIDIA nodes the driver loaded and nouveau blocked. `--reboot NODE` reboots that node the way the node runner does and requires it back within 15 minutes.
+
+- **t121-cluster.sh**: every node Ready, the control-plane count, no node tainted against workloads, one etcd member and API server per control-plane node, no join tokens or uploaded certificates left, kubeconfig on the API endpoint; with a shared address: the API answers there and one kube-vip runs per control-plane node. `--failover` takes kube-vip off the node holding the address, requires another node to take it with the API still answering, then restores it.
 
 Unit tests that need no machines are in `tests/unit` (`tests/run.sh`); the read-only clean-host check after an uninstall is `tests/host/verify-clean.sh`.

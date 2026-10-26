@@ -173,5 +173,5 @@ stage_k8s_verify() {
   [ -n "$ip" ] || die "no LoadBalancer address from MetalLB"
   wait_for "http://$ip answers" 60 3 bash -c "curl -fsS -m 5 http://$ip/ | grep -qx oif-smoke-ok" || die "http://$ip did not answer (MetalLB L2 announcements?)"
   kc delete namespace oif-smoke --wait=true >> "$LOG" 2>&1 || warn "test namespace oif-smoke not deleted"
-  ok "Kubernetes ready: node $(kc get nodes --no-headers | awk '{print $1" "$2" "$5}'), storage and load balancer tested ($ip)"
+  ok "Kubernetes ready: $(kc get nodes --no-headers | awk '$2 == "Ready" {n++; s = s " " $1} END {print n " node(s) Ready:" s}'), storage and load balancer tested ($ip)"
 }
