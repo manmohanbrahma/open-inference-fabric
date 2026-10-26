@@ -102,7 +102,7 @@ host_check() {   # read-only: never changes the host
     nvidia) ok "$b on the nvidia driver" ;; nouveau) warn "$b on nouveau: oif install replaces it with the NVIDIA driver (one reboot, asked first)" ;;
     *) warn "$b on driver '$(drv "$b")'" ;; esac; done
   [ ${#OTHER_BDFS[@]} -gt 0 ] && warn "display-only AMD GPU(s) ${OTHER_BDFS[*]}: oif install isolates them with vfio so Kubernetes cannot claim them (one reboot)"
-  swapon --noheadings | grep -q . && warn "swap is on: oif install turns it off for Kubernetes (uninstall turns it back on)"
+  swapon --noheadings | grep . >/dev/null && warn "swap is on: oif install turns it off for Kubernetes (uninstall turns it back on)"
   local ns r; for ns in $(host_nameservers); do   # pods use every listed server, not only the one the host prefers
     r=$(dns_query "$ns" github.com)
     case $r in "rcode 0 "*) ok "DNS server $ns answers" ;;

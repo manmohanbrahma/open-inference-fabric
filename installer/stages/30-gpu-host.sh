@@ -29,10 +29,13 @@ stage_amd_firmware() {
   if amd_gpu_up; then ok "AMD GPU $(amd_targets) on amdgpu, /dev/kfd present"; return 0; fi
   if apt-cache show linux-firmware-amd-graphics >/dev/null 2>&1; then apt_install linux-firmware-amd-graphics; else apt_install linux-firmware; fi
   ok "AMD GPU firmware installed"
-  # amdgpu loaded but holding no device (it failed without firmware): load it again now; otherwise the reboot stage asks
-  if lsmod | awk '$1 == "amdgpu" {exit !($3 == 0)}'; then
-    modprobe -r amdgpu && modprobe amdgpu && wait_for "AMD GPU started by amdgpu" 60 3 amd_gpu_up || true
+  # amdgpu loaded but holding no device (it failed without firmware): load it again now; otherwise a reboot starts it.
+  # lsmod is read whole: an awk that exits at the first match cuts lsmod off, and pipefail then reads that as failure.
+  local users; users=$(lsmod | awk '$1 == "amdgpu" {print $3}')
+  if [ -z "$users" ] || [ "$users" = 0 ]; then
+    { modprobe -r amdgpu 2>/dev/null || true; } && modprobe amdgpu && wait_for "AMD GPU started by amdgpu" 60 3 amd_gpu_up || true
   fi
+  amd_gpu_up || reboot_ask "start the AMD GPU with its firmware"
 }
 
 register_stage gpu-isolation
@@ -90,7 +93,7 @@ stage_host_verify() {
   fi
   iso_ok || die "not on vfio-pci: $(iso_list) (lspci -nnk -s $(iso_list | cut -d' ' -f1))"
   [ -n "$(iso_list)" ] && ok "isolated on vfio-pci: $(iso_list)"
-  swapon --noheadings | grep -q . && die "swap is on again (check /etc/fstab and systemd swap units)"
+  swapon --noheadings | grep . >/dev/null && die "swap is on again (check /etc/fstab and systemd swap units)"
   ok "swap off"
   systemctl is-active -q containerd || die "containerd is not running (journalctl -u containerd)"
   ok "containerd running"

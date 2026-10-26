@@ -13,7 +13,7 @@ stage_kernel() {
   modprobe overlay; modprobe br_netfilter
   put_file /etc/sysctl.d/90-oif.conf $'# oif: Kubernetes networking and many watched files (operators, Grafana)\nnet.ipv4.ip_forward = 1\nnet.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nfs.inotify.max_user_instances = 8192\nfs.inotify.max_user_watches = 1048576\n'
   sysctl -q --system
-  if swapon --noheadings | grep -q .; then
+  if swapon --noheadings | grep . >/dev/null; then
     backup_file /etc/fstab
     swapoff -a
     sed -i -E 's|^([^#].*[[:space:]]swap[[:space:]].*)$|# disabled by oif: \1|' /etc/fstab

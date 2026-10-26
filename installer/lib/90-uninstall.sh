@@ -105,7 +105,8 @@ replay_manifest() {   # reverse every recorded change, newest first; package rem
   if [ $redo = yes ]; then update-initramfs -u -k "$(uname -r)" >/dev/null 2>&1; ok "boot image rebuilt"; fi
   local d; for d in "${datadirs[@]}"; do   # never delete through a mount that is still attached
     [ -n "$d" ] && [ "$d" != / ] && [ -e "$d" ] || continue
-    if findmnt -rn -o TARGET | grep -q "^$d\(/\|$\)"; then warn "$d still has a mount under it - left in place"; continue; fi
+    # grep reads all of findmnt: with -q it would stop at the first match and pipefail could report "no mount"
+    if findmnt -rn -o TARGET | grep "^$d\(/\|$\)" >/dev/null; then warn "$d still has a mount under it - left in place"; continue; fi
     rm -rf --one-file-system -- "$d"; ok "removed $d"; done
   return 0
 }
