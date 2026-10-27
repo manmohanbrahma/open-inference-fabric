@@ -8,6 +8,7 @@ Each completed (or substantial) T-xxx task gets a presentation that explains the
 
 | Deck | Task | Status | Description |
 |------|------|--------|-------------|
+| [T-120 Node List & Cluster Key](T120-Node-List-Cluster-Key.md) | T-120 | Done | Node list (`OIF_NODES`), cluster SSH key, per-node stage runner with reboot resume |
 | [T-121 HA Kubernetes](T121-HA-Kubernetes-Workflow.md) | T-121 | Done | Highly available control plane with kube-vip, multi-node joins, Calico & MetalLB |
 | [T-122 GPUs on Their Nodes](T122-GPUs-On-Their-Nodes.md) | T-122 | Done | Per-node GPU inventory, vendor drivers/firmware, conditional GPU Operators, correct resource placement |
 
