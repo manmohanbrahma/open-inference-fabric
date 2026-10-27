@@ -1,84 +1,183 @@
-# Product Requirements Document
+# Open Inference Fabric — Product Requirements Document (PRD)
 
-## Product
+**Version:** 0.1  
+**Date:** 2026-10-27  
+**Status:** Draft  
+**Owner:** Manmohan Brahma  
+**Related:** TASKS.md, docs/ARCHITECTURE.md, docs/DECISIONS.md, presentations/
 
-**Open Inference Fabric (OIF)**: an open-source suite that turns one or more Linux GPU servers with NVIDIA and AMD GPUs into a single, scheduled, observable LLM serving platform.
+---
 
-## Problem
+## 1. Overview
 
-Teams that own both NVIDIA and AMD GPUs run a separate stack per vendor:
+### 1.1 Product Name
+Open Inference Fabric (OIF)
 
-- Each vendor has its own device plugin, metrics exporter and dashboards, so GPU health and load cannot be seen or compared in one place.
-- Models are served differently on each vendor, behind different endpoints, so applications must know which GPU they are using.
-- There is no shared scheduling or quota layer across vendors: whoever deploys first takes the GPU.
-- Performance claims ("the W7900 is as fast as the A6000") are made with different tools and settings, so results are not comparable.
+### 1.2 One-line description
+An open-source, AI-native platform that lets teams schedule, serve, benchmark and observe LLMs on both NVIDIA and AMD GPUs through one consistent stack — with a clean, reversible installer.
 
-NVIDIA has open-sourced the pieces needed to solve this on Kubernetes (Run:ai with the KAI Scheduler, and Dynamo with vLLM, SGLang and TensorRT-LLM back ends), but they target NVIDIA hardware and are not assembled into one installable suite that also covers AMD.
+### 1.3 Problem Statement
+Organisations that run both NVIDIA and AMD GPUs today face fragmented stacks:
+- Different operators, resource names, schedulers and dashboards per vendor
+- No shared quotas or fair comparison of the same model/engine across vendors
+- High operational cost of maintaining two parallel platforms
+- Difficulty proving which accelerator is better for a given workload
+- Install and uninstall processes that leave residual state
 
-## Target users
+The result is vendor lock-in risk, higher TCO, and slow decision-making when choosing or expanding accelerator fleets.
 
-| User | Need |
-| --- | --- |
-| Platform engineer / AI infrastructure admin (primary) | Install, operate and remove the platform on on-prem GPU servers; share GPUs between teams with quotas |
-| ML / application engineer | One OpenAI-compatible API, whatever GPU vendor serves the model |
-| Performance engineer | Repeatable, comparable benchmarks across GPUs and engines, with hardware telemetry next to the results |
+### 1.4 Solution Summary
+OIF provides a layered, pluggable fabric:
+- One reversible installer (`oif`) that prepares hosts, builds or attaches to Kubernetes, installs GPU operators, scheduler, telemetry and (later) serving + gateway
+- Vendor-neutral upper layers: workloads ask for a model or GPU count; lower layers decide the accelerator
+- Unified telemetry schema (`oif:*`) and fair benchmarking
+- Change records that enable a complete uninstall back to the OS default
 
-## Goal
+---
 
-From a clean Ubuntu server, one installer builds a Kubernetes platform where:
+## 2. Goals and Non-Goals
 
-1. **Orchestration**: the open-source Run:ai platform (KAI Scheduler, projects, quotas, node pools) decides which workload gets which GPU, for NVIDIA and AMD.
-2. **Serving**: NVIDIA Dynamo serves models with vLLM (and later SGLang and TensorRT-LLM) behind one OpenAI-compatible endpoint, on NVIDIA GPUs and, through a ROCm build, on AMD GPUs.
-3. **Performance**: AIPerf runs standard benchmark profiles against any endpoint and produces a comparable report.
-4. **Observability**: one Prometheus and Grafana show the hardware layer (utilisation, memory, power, temperature, clocks, errors, throttling) and the software layer (scheduling, queueing, TTFT, inter-token latency, throughput, KV cache, errors) for both vendors with the same metric names.
+### 2.1 Goals (v0.1 – v0.2)
+- Run the same LLM workload on NVIDIA and AMD GPUs under one scheduler with per-vendor quotas
+- Provide one set of dashboards that show both vendors side-by-side
+- Deliver fair, repeatable benchmarks (same model, engine version, flags, one GPU under load)
+- Support single-node and multi-node HA clusters built by oif (kubeadm + kube-vip)
+- Make install and uninstall fully reversible
+- Keep the entire stack open source (Apache-2.0)
 
-## Core features
+### 2.2 Non-Goals (for current phases)
+- Becoming a managed cloud service
+- Supporting every accelerator on day one (Intel Gaudi and others are future)
+- Replacing vendor-specific optimisations (TensorRT-LLM remains NVIDIA-only reference)
+- Full multi-tenancy SaaS features (billing, SSO federation) in the core open-source product
+- Training-focused orchestration beyond what Run:ai/KAI already provides
 
-1. Installer and uninstaller (`oif`)
-2. GPU enablement for NVIDIA and AMD
-3. Orchestration with Run:ai / KAI
-4. Model serving with Dynamo (NVIDIA, and AMD via ROCm)
-5. Performance testing with AIPerf
-6. Hardware and software telemetry with vendor-neutral dashboards
+---
 
-## MVP (v0.1)
+## 3. Target Users & Personas
 
-Prove one model on both GPUs, scheduled, served, measured and observed.
+| Persona | Description | Primary Needs |
+|---------|-------------|---------------|
+| **Platform / MLOps Engineer** | Owns the shared GPU cluster | Clean install, reversible changes, multi-vendor quotas, observability |
+| **ML Engineer / Researcher** | Runs experiments and serving | Fair comparison reports, simple OpenAI-compatible endpoint, templates |
+| **Infrastructure Lead** | Decides hardware strategy | Evidence for NVIDIA vs AMD choices, avoidance of lock-in |
+| **Security / Compliance** | Reviews residual state and secrets | Clean uninstall, no long-lived join tokens, private CA option |
 
-- `oif install`: single-node upstream Kubernetes 1.35 on Ubuntu, NVIDIA GPU Operator and AMD GPU Operator, local storage, load balancer; every host change recorded.
-- `oif uninstall`: returns the host to its OS default, as `nai-on-nkp.sh` does.
-- Run:ai open-source control plane and cluster with the KAI Scheduler; one project with a quota of one NVIDIA and one AMD GPU; one node pool per vendor.
-- Dynamo platform; the same small model (Qwen3-0.6B) served on the RTX A6000 (Dynamo + vLLM, CUDA) and on the Radeon PRO W7900 (Dynamo + vLLM, ROCm), both answering through one Dynamo frontend.
-- `oif bench`: AIPerf sweep (concurrency 1, 8, 32, 64; fixed input and output lengths) per GPU, JSON results and an HTML comparison report.
-- Prometheus, Grafana, DCGM exporter, AMD device metrics exporter, node exporter, Dynamo and vLLM metrics; recording rules that give both vendors the same metric names; a "Fleet" dashboard and a "Serving" dashboard.
+---
 
-## Out of scope for v0.1
+## 4. Success Metrics
 
-- Multi-node clusters, high availability, air-gapped installation
-- Disaggregated prefill/decode, KV Block Manager, SLA planner and autoscaling
-- GPU fractions and sharing (CUDA fractions, MIG, AMD partitioning, HAMi)
-- SGLang and TensorRT-LLM back ends (TensorRT-LLM never runs on AMD)
-- Logs (Loki) and distributed tracing (Tempo); metrics only in v0.1
-- Authentication on the inference endpoint beyond network placement, multi-tenant self-service, billing
+| Metric | Target (v0.1 / early v0.2) | How measured |
+|--------|----------------------------|--------------|
+| Install success rate on reference hardware | ≥ 95% clean installs | Automated lab tests + manual runs |
+| Uninstall cleanliness | Host returns to OS default (verified by check script) | `tests/host/verify-clean.sh` |
+| Dual-vendor visibility | Both NVIDIA and AMD appear in Run:ai inventory and Grafana | Manual + automated checks |
+| Fair benchmark reproducibility | Same model/engine on both vendors with documented versions | AIPerf reports |
+| Multi-node HA | API VIP survives control-plane node failure | `t121-cluster.sh --failover` |
+| Time to first useful cluster | < 30–45 min on prepared reference host (single node) | Measured install logs |
 
-## Success criteria
+---
 
-On the reference host (1x RTX A6000, 1x Radeon PRO W7900, Ubuntu 26.04):
+## 5. Requirements by Phase
 
-1. `oif install` completes unattended after its questions, and a second run changes nothing.
-2. Both GPUs are allocatable; a third GPU workload in the project stays pending because of the quota.
-3. `POST /v1/chat/completions` on the single endpoint is answered by the model on the A6000 and on the W7900 (selected by model name), including streaming.
-4. `oif bench` finishes the sweep on each GPU with no failed requests and writes one report comparing TTFT, inter-token latency, output tokens/s and requests/s.
-5. During the benchmark, the Fleet dashboard shows utilisation, memory, power and temperature for both GPUs, and the Serving dashboard shows request rate, TTFT and inter-token latency per GPU.
-6. `oif uninstall` leaves no Kubernetes services, mounts, network links or packages behind.
+### Phase 1 — Orchestration Platform (Project 1)
+**Status:** Advanced
 
-## Gate for the AMD path
+- [x] Host preparation, containerd, NVIDIA & AMD drivers/operators
+- [x] Single-node kubeadm + Calico + MetalLB + local-path
+- [x] Run:ai open source with oif patches for AMD visibility
+- [x] Unified `oif:*` recording rules and Fleet/Scheduling dashboards
+- [x] Multi-node node list, cluster SSH key, per-node stages
+- [x] HA control plane (kube-vip) + joins
+- [ ] Per-vendor node pools and real pool-based quotas (T-123)
+- [ ] End-to-end multi-node demonstration + guides
 
-Serving on AMD through Dynamo is a research track (no official ROCm support in Dynamo as of October 2026). Spike S-1 in TASKS.md decides it. If its exit criteria are not met, the project stops and the owner chooses the AMD fallback: llm-d, or plain vLLM ROCm behind the same API.
+### Phase 2 — Serving & Fair Benchmark (Project 2)
+**Status:** Planned
 
-## Constraints
+- Dynamo (or llm-d fallback) on NVIDIA with default engines
+- Equivalent ROCm path for AMD (spike first)
+- AIPerf integration (`oif bench`) with profiles and temperature guard
+- Serving dashboard (TTFT, ITL, throughput, KV cache)
+- Overlay builds for latest engine versions on both vendors
+- Comparison report generation
 
-- Reference hardware: AMD EPYC 9684X, 751 GiB RAM; RTX A6000 (Ampere, 48 GB) and Radeon PRO W7900 (RDNA3 gfx1100, 48 GB); a Radeon PRO W6400 display card isolated with vfio.
-- Host OS Ubuntu 26.04 (Dynamo documents Ubuntu 22.04 and 24.04; its user space comes from containers).
-- Thermals: the chassis cannot cool both GPUs under full load at once; benchmarks load one GPU at a time.
-- Everything is open source; lab-specific values live only in an untracked `.env`.
+### Phase 3 — Unified API & Gateway (Project 3)
+**Status:** Planned
+
+- Gateway API Inference Extension + chosen gateway (agentgateway or Agent Router)
+- One OpenAI-compatible endpoint (`api.<domain>`)
+- API keys mapped to Run:ai projects
+- Per-key token budgets and usage metering
+- Self-service deploy + benchmark API (later)
+
+### Later / Future
+- Platform adapters (OpenShift, Nutanix Kubernetes Platform)
+- Additional accelerators (Intel Gaudi, etc.)
+- ARM64 support
+- Cloud GPU instance attachment
+
+---
+
+## 6. Functional Requirements (Core)
+
+| ID | Requirement | Priority | Phase |
+|----|-------------|----------|-------|
+| FR-01 | `oif install` prepares host(s) and installs the chosen stack idempotently | P0 | 1 |
+| FR-02 | Every change is recorded; `oif uninstall` reverses exactly those changes | P0 | 1 |
+| FR-03 | Both `nvidia.com/gpu` and `amd.com/gpu` are first-class resources | P0 | 1 |
+| FR-04 | Scheduler supports projects, quotas and (multi-node) node pools per vendor | P0 | 1 |
+| FR-05 | Telemetry from both vendors maps into a single `oif:*` schema | P0 | 1 |
+| FR-06 | HA Kubernetes API via kube-vip on multi-node | P0 | 1 |
+| FR-07 | Fair benchmark of the same model/engine on both vendors | P0 | 2 |
+| FR-08 | One OpenAI-compatible inference endpoint with team isolation | P0 | 3 |
+| FR-09 | Platform can attach to an existing OpenShift/NKP cluster (adapter) | P1 | Later |
+| FR-10 | All versions pinned and checksummed; no silent upgrades | P0 | All |
+
+---
+
+## 7. Non-Functional Requirements
+
+| Area | Requirement |
+|------|-------------|
+| **Reversibility** | Uninstall must leave the host in a state indistinguishable from a fresh OS install (verified by automated check) |
+| **Security** | No long-lived join tokens; cluster key is oif-owned; secrets stay root-only |
+| **Observability** | All key metrics available in Grafana under the `oif:*` schema |
+| **Documentation** | Every major feature has a guide + living presentation under `presentations/` |
+| **Licensing** | Apache-2.0 for all oif code and patches |
+| **Testability** | Lab tests (hybrid-gpu-lab) cover single-node and multi-node paths |
+
+---
+
+## 8. Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Dynamo ROCm path fails or is incomplete | Medium | High | Spike S-1; fallback to llm-d or plain vLLM ROCm |
+| Run:ai patches break on upstream upgrades | Medium | Medium | Pin versions; maintain patch set per release; upstream contributions |
+| Fair comparison invalidated by engine version drift | High | Medium | Overlay builds + explicit version reporting in every benchmark |
+| Platform adapters (OpenShift/NKP) prove complex | Medium | Medium | Keep adapters thin; only change install/exposure paths |
+| Scope creep into full multi-tenancy SaaS | Medium | High | Strict non-goals; focus on self-hosted open-source platform |
+
+---
+
+## 9. Open Questions
+
+1. Final choice of serving framework for AMD after S-1 (Dynamo ROCm vs llm-d vs plain vLLM).
+2. Gateway product selection (agentgateway vs Agent Router) after S-6.
+3. Priority order of platform adapters (OpenShift first?).
+4. Whether to expose a public comparison report site or keep reports local.
+
+---
+
+## 10. References
+
+- Architecture: `docs/ARCHITECTURE.md` and the high-level architecture document
+- Decisions: `docs/DECISIONS.md` (especially ADR-010, ADR-015, ADR-016, ADR-017, ADR-018)
+- Tasks: `TASKS.md`
+- Presentations: `presentations/`
+- Market research (Oct 2026): Run:ai open source, llm-d, GPUStack, HAMi, Modular MAX, Opod, AMD Enterprise AI Suite, etc.
+
+---
+
+*This PRD is a living document. Update it when major scope or prioritisation decisions are made.*

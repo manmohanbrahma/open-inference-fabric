@@ -4,7 +4,14 @@ Living documentation decks for major features and tasks in Open Inference Fabric
 
 Each completed (or substantial) T-xxx task gets a presentation that explains the workflow, architecture decisions, and how it was verified. These decks are updated as the modules evolve.
 
-## Current decks
+## Product-level
+
+| Deck | Description |
+|------|-------------|
+| [Product Strategy](OIF-Product-Strategy.md) | Positioning, market, uniqueness, roadmap and success metrics |
+| [PRD](../docs/PRD.md) | Formal Product Requirements Document (v0.1) |
+
+## Feature / Task decks
 
 | Deck | Task | Status | Description |
 |------|------|--------|-------------|
@@ -16,7 +23,7 @@ Each completed (or substantial) T-xxx task gets a presentation that explains the
 
 - **Primary format**: Markdown (renders natively on GitHub, easy to keep in sync with code).
 - PPTX / PDF versions may be attached in Releases or generated on request.
-- Filenames follow `Txxx-Short-Name.md`.
+- Filenames follow `Txxx-Short-Name.md` for task decks; product-level decks use descriptive names.
 - Every deck links back to the relevant section of `TASKS.md`, `docs/DECISIONS.md` (ADRs), and the key source files.
 
 ## How these stay current
