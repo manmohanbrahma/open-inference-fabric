@@ -13,7 +13,7 @@
  ├───────────────────────────────────────────────────────────────────────────┤
  │ Orchestration  Run:ai control plane + cluster services                    │
  │                KAI Scheduler (queues, quotas, gang, bin-packing)          │
- │                node pools: nvidia, amd                                    │
+ │                node pools: nvidia, amd  (multi-node; T-123)               │
  ├───────────────────────────────────────────────────────────────────────────┤
  │ Observability  Prometheus + Grafana + Alertmanager (kube-prometheus-stack)│
  │                DCGM exporter · AMD device metrics exporter · node exporter│
@@ -24,12 +24,31 @@
  │                labeller, metrics exporter)                                │
  ├───────────────────────────────────────────────────────────────────────────┤
  │ Kubernetes     kubeadm 1.35, containerd, Calico, local-path storage,      │
- │                MetalLB, single node (control plane runs workloads)        │
+ │                MetalLB; single node, or multi-node HA with kube-vip       │
+ │                (OIF_API_VIP) and no control-plane taint (ADR-017)         │
  ├───────────────────────────────────────────────────────────────────────────┤
  │ Host           Ubuntu 26.04, NVIDIA driver (Ubuntu archive), amdgpu       │
  │                (in kernel), vfio for GPUs kept out of Kubernetes          │
  └───────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Multi-node topology (P1.3)
+
+When `OIF_NODES` is set, the admin runs `oif` only on the first control-plane node. oif creates a cluster SSH key, prepares every other node with the same node stages (each node keeps its own change record), then forms an HA control plane and joins workers.
+
+```text
+  cp1 (runs oif) ──┐
+  cp2              ├── OIF_API_VIP (kube-vip Lease) ── API clients
+  cp3              ┘
+  gpu-amd   (W7900, amd.com/gpu)
+  gpu-nvidia (A6000, nvidia.com/gpu)
+```
+
+- GPU inventory and drivers follow PCI devices on each node (T-122).
+- Operators install only when at least one node has that vendor.
+- Uninstall on cp1 walks every node and removes the cluster key (and any admin key oif added).
+
+Single-node installs are unchanged: empty `OIF_NODES` keeps the original path.
 
 ## Request flow
 
@@ -41,7 +60,7 @@ The model name selects the vendor in v0.1, for example `qwen3-0.6b-nvidia` and `
 
 `DynamoGraphDeployment (or Run:ai inference workload) → pods labelled with the Run:ai project / KAI queue → KAI Scheduler checks the queue's quota and the node pool → pod bound to a node with nvidia.com/gpu or amd.com/gpu → device plugin assigns the GPU`
 
-KAI handles NVIDIA GPUs natively. Whether it applies queue quotas to `amd.com/gpu` is unverified and is tested by spike S-2.
+On a single mixed node, per-vendor caps use a Kubernetes ResourceQuota (ADR-015). On multi-node with one vendor per server, Run:ai node pools provide real per-vendor quotas (T-123).
 
 ## Telemetry flow
 
@@ -62,7 +81,7 @@ KAI handles NVIDIA GPUs natively. Whether it applies queue quotas to `amd.com/gp
 open-inference-fabric/
 ├── oif                     # CLI entry point (bash): install, uninstall, status, bench, ...
 ├── installer/
-│   ├── lib/                # output, settings, host facts, packages, reboots, manifest replay
+│   ├── lib/                # output, settings, host facts, packages, reboots, nodes, manifest
 │   └── stages/             # NN-name.sh: one install stage each, registered in order
 ├── versions.env            # every pinned version and image tag
 ├── platform/               # Helm values and manifests per component
@@ -74,8 +93,9 @@ open-inference-fabric/
 ├── observability/
 │   ├── rules/              # oif:* recording rules
 │   └── dashboards/         # Fleet, Serving, Scheduling (Grafana JSON)
-├── tests/                  # shellcheck, unit tests, smoke and e2e checks
-├── docs/                   # PRD, ARCHITECTURE, DESIGN, RULES, DECISIONS, ...
+├── presentations/          # workflow decks for completed major tasks
+├── tests/                  # unit, lab (multi-node), host clean checks
+├── docs/                   # PRD, ARCHITECTURE, DESIGN, RULES, DECISIONS, MEMORY
 │   └── guides/             # install and deployment guide per step
 ├── TASKS.md  CLAUDE.md  README.md  .env.example
 ```
@@ -83,7 +103,7 @@ open-inference-fabric/
 ## Architectural rules
 
 - Every component is installed by a stage of `oif install` from pinned versions in `versions.env`; nothing is applied by hand.
-- Every host change is recorded so `oif uninstall` can reverse it (pattern proven in `nai-on-nkp.sh`).
+- Every host change is recorded so `oif uninstall` can reverse it (pattern proven in `nai-on-nkp.sh`). On multi-node, each node keeps its own record; uninstall from the first control-plane node walks the others.
 - Vendor differences stay in `platform/gpu-*`, `images/` and `observability/rules/`. Higher layers (scheduling, serving manifests, dashboards, benchmarks) are vendor-neutral.
 - Workloads request GPUs only through the scheduler and node pools; no pod pins a node by name.
 - Benchmarks run inside the cluster as Jobs, so results exclude laptop and VPN latency, and record the exact image, engine flags and versions with the results.
