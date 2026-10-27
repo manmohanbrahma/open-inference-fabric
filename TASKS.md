@@ -53,6 +53,19 @@ Slice: NVIDIA and AMD GPUs in separate nodes, as in production (one vendor per s
 - [ ] T-124 Demonstration and guides: install, stop cp1 (API and Run:ai keep working), workloads in both pools, quotas, dashboards with two GPU nodes, uninstall across nodes, `lab recreate`, install again
 - Checkpoint: five Ready nodes; Run:ai shows two pools with one GPU each; a project with quota 1 per pool runs one workload per vendor and queues a third; uninstall leaves every node clean.
 
+### P1.4 Topology & Intent (vendor-agnostic surface)
+
+Slice: the platform discovers high-bandwidth domains and accepts jobs that do not name a vendor, while still preferring GPU Direct domains when available (ADR-019, docs/design/Vendor-Agnostic-Job-Model.md).
+
+- [ ] T-130 Topology discovery: controller (or stage) that labels nodes with vendor, interconnect class and provisional domain membership from NFD + GPU operator labels; publishes `AcceleratorDomain` objects for single-node and multi-node same-vendor groups
+- [ ] T-131 `AcceleratorDomain` CRD + status (capacity, allocatable, conditions); basic unit and lab tests on hybrid-gpu-lab
+- [ ] T-132 Domain-aware packing: scheduler filter/score (or KAI integration) that prefers packing multi-GPU requests inside one domain; records chosen domain on the workload
+- [ ] T-133 `AIJob` CRD (intent surface): model, precision, gpuCount, qos, optional placement preferences (`preferVendor`, `requireSameDomain`, `allowCrossVendor`); controller translates to existing Run:ai / Kubernetes objects so current resource names keep working
+- [ ] T-134 PlacementPolicy defaults (namespace or cluster): allowCrossVendor, preferSameDomain, vendorPriority; applied when the AIJob omits fields
+- [ ] T-135 Status and observability: AIJob status shows vendor, domain, crossVendor flag; extend `oif:*` with domain utilisation and cross-vendor placement counters; Grafana panel
+- [ ] T-136 Guides and presentation: how to submit a vendor-agnostic job, how domains appear, how cross-vendor is requested or forbidden
+- Checkpoint: a multi-GPU AIJob with `requireSameDomain: true` lands inside one domain; an AIJob with no vendor preference is placed according to policy; status and dashboards show the chosen vendor and domain; existing direct `nvidia.com/gpu` / `amd.com/gpu` jobs still work.
+
 ## Project 2: Serving and a fair benchmark
 
 The goal is an apples-to-apples comparison: same model, same Dynamo version, same engine version and flags, same benchmark profile, one GPU under load at a time (ADR-011, ADR-012).

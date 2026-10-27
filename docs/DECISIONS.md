@@ -117,3 +117,16 @@ Architecture decision records. Change a decision only with a new ADR that supers
 - **Proposal:** a Gateway API gateway with the inference extension on its own address `api.<domain>`; one InferencePool per model and vendor with Dynamo's endpoint picker; API keys mapped to Run:ai projects; per-key token budgets; usage in the existing Prometheus and Grafana. The implementation is chosen by S-6 on the lab cluster against the same test.
 - **Consequences:** the HAProxy ingress keeps serving the UIs (Run:ai, Grafana); inference traffic goes through the AI gateway only. Self-service deployments (P3.2) create a pool and a route next to each Dynamo deployment.
 
+## ADR-019: Vendor-agnostic job surface, AcceleratorDomain and GPU Direct rules
+
+- **Date:** 2026-10-27. **Status:** proposed (design sketch accepted for planning).
+- **Context:** The primary product objective is one unified platform for AI job submission that is vendor-agnostic. Clusters will contain multiple servers with a variety of GPUs (one vendor per node in production, occasionally mixed). Users and coding agents should be able to submit work without naming `nvidia.com/gpu` or `amd.com/gpu`, while the platform still extracts maximum performance when a same-vendor high-bandwidth domain (NVLink or Infinity Fabric) is available. Cross-vendor placement must be explicit, never accidental.
+- **Decision (proposed):**
+  1. Introduce an `AcceleratorDomain` CRD (discovered by a topology controller from NFD, GPU operators and fabric information) that represents a high-bandwidth island of same-vendor GPUs.
+  2. Introduce a higher-level `AIJob` (and later `InferenceService`) CRD that expresses intent: model, precision, GPU count/class, QoS, optional soft preferences (`preferVendor`, `requireSameDomain`, `allowCrossVendor`). The controller translates these into existing Run:ai / Kubernetes objects so current resource names and projects continue to work.
+  3. GPU Direct strategy: prefer packing multi-GPU jobs inside one `AcceleratorDomain`; allow same-vendor multi-domain placement when high-speed fabric (IB/RoCE) is present; permit cross-vendor placement only when the job or PlacementPolicy explicitly allows it, and mark the status `crossVendor: true`.
+  4. PlacementPolicy and ProjectQuota extensions supply defaults and vendor/domain ceilings.
+- **Why:** Delivers the product goal of a single submission surface while preserving performance for homogeneous high-bandwidth domains and giving operators clear control over cross-vendor behaviour.
+- **Migration:** The new CRDs are a façade. Existing Run:ai projects, node pools and direct `nvidia.com/gpu` / `amd.com/gpu` requests remain valid. Topology discovery can be enabled gradually; when domains are not yet present, behaviour falls back to current node-pool logic.
+- **Consequences:** New controller and CRDs to implement and test; scheduler scoring/filter extensions (or KAI integration points); additional `oif:*` metrics for domain utilisation and cross-vendor placements. Detailed sketches live in `docs/design/Vendor-Agnostic-Job-Model.md`.
+- **Follow-up:** Accept or refine after review; turn into concrete tasks under P1.4 / later phases.
