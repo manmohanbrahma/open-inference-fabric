@@ -35,6 +35,7 @@ sudo ./oif bench --model qwen3-0.6b        # (Project 2) AIPerf sweep on each GP
 | --- | --- |
 | [PRD](docs/PRD.md) | What we are building and why; goals and success criteria |
 | [SDLC](docs/SDLC.md) | How we build, test, document and release (process for humans and agents) |
+| [Agents](docs/AGENTS.md) | Roles of Claude Code and Grok on this repository |
 | [Architecture](docs/ARCHITECTURE.md) | Layers, flows, telemetry schema, repository layout |
 | [Design](docs/DESIGN.md) | CLI, dashboard and report conventions |
 | [Rules](docs/RULES.md) | How code is written and changed |
