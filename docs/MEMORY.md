@@ -30,7 +30,7 @@ Process: [docs/SDLC.md](SDLC.md).
 
 ## Current task
 
-Next implementation work: **T-123** (Run:ai on several nodes: node pools from oif labels, per-pool quotas, patched images on every node). Then T-124 demonstration and guides.
+T-120 – T-123 done and tested on hybrid-gpu-lab (guide 10; lab scripts t120–t123 pass). Next implementation work: **T-124** (demonstration: stop cp1, workloads in both pools, dashboards, uninstall across nodes, `lab recreate`, install again).
 
 Still open from earlier slices: T-108 GPU fractions (needs driver ≥ r615), T-116 KAI vendor-aware placement on mixed nodes, T-003 CI.
 
