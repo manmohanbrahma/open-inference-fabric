@@ -97,17 +97,17 @@ register_stage amd-quota
 stage_amd_quota() {   # S-2: Run:ai quotas count amd.com/gpu (team-a quota 1 runs, team-b quota 0 waits on a free GPU)
   [ "$(gpu_count amd)" -gt 0 ] || return 0
   local a b reason
-  a=$(runai_api project team-a 1 1) || die "project team-a: $a"
-  b=$(runai_api project team-b 0 0) || die "project team-b: $b"
+  a=$(runai_project team-a 1) || die "project team-a: $a"
+  b=$(runai_project team-b 0) || die "project team-b: $b"
   export BUSYBOX_IMAGE
   kc -n "$a" delete pod amd-quota-test --ignore-not-found --wait=true >/dev/null 2>&1; kc -n "$b" delete pod amd-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
-  NS=$b render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-b rejected"
+  NS=$b NODE_POOL=$(pool_for amd) render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-b rejected"
   sleep 45
   [ "$(kc -n "$b" get pod amd-quota-test -o jsonpath='{.status.phase}')" = Pending ] \
     || die "team-b's AMD GPU pod is '$(kc -n "$b" get pod amd-quota-test -o jsonpath='{.status.phase}')' although its quota is 0 (quota not enforced on amd.com/gpu)"
   reason=$(kc -n "$b" get events --field-selector involvedObject.name=amd-quota-test -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | tail -1)
   ok "team-b (quota 0) waits while the AMD GPU is free: ${reason:-pending}"
-  NS=$a render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-a rejected"
+  NS=$a NODE_POOL=$(pool_for amd) render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-a rejected"
   wait_for "team-a (quota 1) gets the AMD GPU" 300 5 bash -c \
     "[ \"\$(kubectl --kubeconfig $KCFG -n $a get pod amd-quota-test -o jsonpath='{.status.phase}')\" = Running ]" \
     || die "team-a's AMD GPU pod did not start (kubectl -n $a describe pod amd-quota-test)"
@@ -137,19 +137,20 @@ stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped 
   local alloc c out
   alloc=$(allocatable_sum nvidia.com/gpu)/$(allocatable_sum amd.com/gpu)   # over every node of the cluster
   [ "${alloc%/*}" -ge 1 ] 2>/dev/null && [ "${alloc#*/}" -ge 1 ] 2>/dev/null || { warn "per-vendor quota test needs an NVIDIA and an AMD GPU: skipped"; return 0; }
+  if multi_node; then vendor_quota_pools; return; fi   # several nodes: Run:ai's own quota per vendor pool (T-123)
   c=$(runai_api project team-c 2 2) || die "project team-c: $c"
   export BUSYBOX_IMAGE CUDA_SAMPLE_IMAGE
   NS=$c NVIDIA_GPU_CAP=1 AMD_GPU_CAP=1 render "$OIF_HOME/platform/runai/vendor-quota.yaml" | kc apply -f - >> "$LOG" || die "ResourceQuota for $c rejected"
   ok "project team-c (Run:ai quota 2 GPUs, namespace $c) capped at 1 NVIDIA + 1 AMD GPU"
   kc -n "$c" delete pod gpu-quota-test gpu-quota-test-2 amd-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
-  NS=$c render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "NVIDIA test pod for team-c rejected"
-  NS=$c render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-c rejected"
+  NS=$c NODE_POOL=$(pool_for nvidia) render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "NVIDIA test pod for team-c rejected"
+  NS=$c NODE_POOL=$(pool_for amd) render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-c rejected"
   wait_for "team-c runs one GPU of each vendor" 300 5 bash -c \
     "[ \"\$(kubectl --kubeconfig $KCFG -n $c get pod gpu-quota-test amd-quota-test -o jsonpath='{.items[*].status.phase}')\" = 'Running Running' ]" \
     || die "team-c's GPU pods did not both start (kubectl -n $c describe pod gpu-quota-test amd-quota-test)"
   ok "team-c runs $(kc -n "$c" logs gpu-quota-test 2>/dev/null | head -1 | cut -d'(' -f1)and the AMD GPU ($(kc -n "$c" logs amd-quota-test 2>/dev/null | tr '\n' ' '))"
   # a second NVIDIA GPU pod: inside Run:ai's quota of 2, over the NVIDIA cap of 1
-  if out=$(NS=$c render "$OIF_HOME/platform/runai/quota-test.yaml" | sed 's/name: gpu-quota-test$/name: gpu-quota-test-2/' | kc create -f - 2>&1); then
+  if out=$(NS=$c NODE_POOL=$(pool_for nvidia) render "$OIF_HOME/platform/runai/quota-test.yaml" | sed 's/name: gpu-quota-test$/name: gpu-quota-test-2/' | kc create -f - 2>&1); then
     die "a second NVIDIA GPU pod was accepted in $c although the NVIDIA cap is 1 (kubectl -n $c describe resourcequota oif-gpu-vendor)"
   fi
   grep -q 'exceeded quota' <<< "$out" || die "second NVIDIA pod failed for another reason: $out"
@@ -162,3 +163,27 @@ stage_vendor_quota() {   # T-113 (ADR-015): team-c, Run:ai quota 2 GPUs, capped 
 # needs the monitoring CRDs), so Run:ai and the rest find both vendors' GPUs
 stage_after amd-gpu-operator prometheus
 stage_after amd-gpu-verify amd-gpu-operator
+
+vendor_quota_pools() {   # T-123: team-c has 1 GPU in pool nvidia and 1 in pool amd; a second NVIDIA pod waits in the queue
+  local c reason
+  c=$(runai_api project-pools team-c nvidia=1 amd=1) || die "project team-c: $c"
+  ok "project team-c (namespace $c): Run:ai quota 1 GPU in node pool nvidia and 1 in node pool amd"
+  export BUSYBOX_IMAGE CUDA_SAMPLE_IMAGE
+  kc -n "$c" delete pod gpu-quota-test gpu-quota-test-2 amd-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
+  NS=$c NODE_POOL=nvidia render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "NVIDIA test pod for team-c rejected"
+  NS=$c NODE_POOL=amd render "$OIF_HOME/platform/runai/quota-test-amd.yaml" | kc apply -f - >> "$LOG" || die "AMD test pod for team-c rejected"
+  wait_for "team-c runs one GPU in each vendor's pool" 300 5 bash -c \
+    "[ \"\$(kubectl --kubeconfig $KCFG -n $c get pod gpu-quota-test amd-quota-test -o jsonpath='{.items[*].status.phase}')\" = 'Running Running' ]" \
+    || die "team-c's GPU pods did not both start (kubectl -n $c describe pod gpu-quota-test amd-quota-test)"
+  ok "team-c runs $(kc -n "$c" logs gpu-quota-test 2>/dev/null | head -1 | cut -d'(' -f1)on $(kc -n "$c" get pod gpu-quota-test -o jsonpath='{.spec.nodeName}') and the AMD GPU on $(kc -n "$c" get pod amd-quota-test -o jsonpath='{.spec.nodeName}')"
+  # a second NVIDIA pod: accepted (no ResourceQuota on several nodes) but over the project's quota in pool nvidia
+  NS=$c NODE_POOL=nvidia render "$OIF_HOME/platform/runai/quota-test.yaml" | sed 's/name: gpu-quota-test$/name: gpu-quota-test-2/' | kc apply -f - >> "$LOG" \
+    || die "second NVIDIA test pod for team-c rejected"
+  sleep 45
+  [ "$(kc -n "$c" get pod gpu-quota-test-2 -o jsonpath='{.status.phase}')" = Pending ] \
+    || die "team-c's second NVIDIA pod is '$(kc -n "$c" get pod gpu-quota-test-2 -o jsonpath='{.status.phase}')' although pool nvidia's quota is used"
+  reason=$(kc -n "$c" get events --field-selector involvedObject.name=gpu-quota-test-2 -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | tail -1)
+  ok "a second NVIDIA pod waits in the queue: ${reason:-pending}"
+  kc -n "$c" delete pod gpu-quota-test gpu-quota-test-2 amd-quota-test --wait=true >> "$LOG" 2>&1
+  ok "T-123: per-vendor quotas through Run:ai node pools (project team-c kept)"
+}

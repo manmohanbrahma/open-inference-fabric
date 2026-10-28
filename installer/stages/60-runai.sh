@@ -240,7 +240,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   local comp=$1 out=$STATE/build/runai img=$RUNAI_PATCH_REGISTRY/$1:$RUNAI_VERSION-oif1 rev
   rev=$(runai_patch_comp_rev "$comp" "$2")
   if [ "$(cat "$out/$comp.rev" 2>/dev/null)" = "$rev" ] && runai_image_loaded "$img"; then
-    ok "patched image $img is already built from the same patches ($rev)"; return 0; fi
+    ok "patched image $img is already built from the same patches ($rev)"; runai_patch_spread "$comp" "$img"; return 0; fi
   runai_fetch_resumable "https://codeload.github.com/dsx-ai-factory/run-ai/tar.gz/refs/tags/$RUNAI_VERSION" \
     "$RUNAI_SOURCE_SHA256" "$STATE/build/src/run-ai-$RUNAI_VERSION.tgz"
   runai_fetch_resumable "https://github.com/google/go-containerregistry/releases/download/$CRANE_VERSION/go-containerregistry_Linux_x86_64.tar.gz" \
@@ -249,7 +249,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   kc -n oif-build delete job "runai-patch-$comp" --ignore-not-found --wait=true >> "$LOG" 2>&1
   export RUNAI_VERSION RUNAI_SOURCE_SHA256 CRANE_VERSION CRANE_SHA256   # the Job template reads them
   COMPONENT=$comp BUILD_IMAGE=$2 BASE_IMAGE=$RUNAI_STOCK_REGISTRY/$comp:$RUNAI_VERSION NEW_IMAGE=$img RUNAI_PATCH_OUT=$out \
-    RUNAI_BUILD_SRC=$STATE/build/src RUNAI_BUILD_CACHE=$STATE/build/cache \
+    RUNAI_BUILD_SRC=$STATE/build/src RUNAI_BUILD_CACHE=$STATE/build/cache BUILD_NODE=$(this_node) \
     render "$OIF_HOME/platform/runai/patch-build-job.yaml" | kc apply -f - >> "$LOG" || die "build Job for $comp rejected"
   log "building Run:ai $comp with $(cd "$OIF_HOME/patches/runai/$RUNAI_VERSION" && ls ./*"$comp"*.patch | sed 's|./||' | paste -sd' ') (5-20 min; longer on a slow link)"
   # up to 4 h on a slow link; a build error fails the Job sooner
@@ -262,6 +262,22 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   runai_image_loaded "$img" || die "image $img not found after import"
   echo "$rev" > "$out/$comp.rev"
   ok "patched image $img loaded into containerd"
+  runai_patch_spread "$comp" "$img"
+}
+this_node() {   # this host's Kubernetes node name (the node with HOST_IP)
+  kc get nodes -o jsonpath="{range .items[*]}{.metadata.name} {.status.addresses[?(@.type=='InternalIP')].address}{'\n'}{end}" \
+    | awk -v a="$HOST_IP" '$2 == a {print $1}'; }
+runai_patch_spread() {   # component image: load the patched image on every other node too (Run:ai pods run on any node)
+  multi_node || return 0
+  local tar=$STATE/build/runai/$1.tar name addr role n=0 has="sudo ctr -n k8s.io images ls -q | grep -xF '$2' >/dev/null"
+  [ -s "$tar" ] || die "no image file $tar to copy to the other nodes"
+  while read -r -u 3 name addr role; do
+    node_ssh "$addr" "$has" && continue
+    NODE_SSH_STDIN=1 node_ssh "$addr" "sudo ctr -n k8s.io images import -" < "$tar" >> "$LOG" 2>&1 || die "cannot load $2 on $name"
+    node_ssh "$addr" "$has" || die "$2 missing on $name after loading it"
+    n=$((n + 1))
+  done 3< <(other_nodes)
+  ok "patched image $2 on every node ($n loaded now)"
 }
 runai_patch_use() {   # component stock|patched: point Run:ai at the image and wait for the rollout
   local comp=$1 reg=$RUNAI_STOCK_REGISTRY tag=$RUNAI_VERSION ns=runai deploy=$1
@@ -307,19 +323,19 @@ register_stage runai-quota
 stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (quota 0) waits even on a free GPU (over-quota is off by default)
   local a b reason
   runai_api check | sed 's/^/    cluster: /' | tee -a "$TLOG"
-  a=$(runai_api project team-a 1 1) || die "project team-a: $a"
-  b=$(runai_api project team-b 0 0) || die "project team-b: $b"
+  a=$(runai_project team-a 1) || die "project team-a: $a"
+  b=$(runai_project team-b 0) || die "project team-b: $b"
   ok "projects team-a (1 GPU, namespace $a) and team-b (0 GPU, namespace $b)"
   export CUDA_SAMPLE_IMAGE
   kc -n "$a" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1; kc -n "$b" delete pod gpu-quota-test --ignore-not-found --wait=true >/dev/null 2>&1
   # 1. team-b alone, with the GPU free: the quota alone must keep it waiting
-  NS=$b render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-b rejected"
+  NS=$b NODE_POOL=$(pool_for nvidia) render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-b rejected"
   sleep 45
   [ "$(pod_phase "$b")" = Pending ] || die "team-b's GPU pod is '$(pod_phase "$b")' although its quota is 0 (quota not enforced)"
   reason=$(kc -n "$b" get events --field-selector involvedObject.name=gpu-quota-test -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | tail -1)
   ok "team-b (quota 0) waits while the GPU is free: ${reason:-pending}"
   # 2. team-a: its quota covers one GPU, it must run
-  NS=$a render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-a rejected"
+  NS=$a NODE_POOL=$(pool_for nvidia) render "$OIF_HOME/platform/runai/quota-test.yaml" | kc apply -f - >> "$LOG" || die "test pod for team-a rejected"
   wait_for "team-a (quota 1) gets the GPU" 300 5 bash -c "[ \"\$(kubectl --kubeconfig $KCFG -n $a get pod gpu-quota-test -o jsonpath='{.status.phase}')\" = Running ]" \
     || die "team-a's GPU pod did not start (kubectl -n $a describe pod gpu-quota-test)"
   [ "$(pod_phase "$b")" = Pending ] || die "team-b's pod left Pending ($(pod_phase "$b"))"
@@ -327,3 +343,42 @@ stage_runai_quota() {   # T-105 checkpoint: team-a (quota 1 GPU) runs; team-b (q
   kc -n "$a" delete pod gpu-quota-test --wait=true >> "$LOG" 2>&1; kc -n "$b" delete pod gpu-quota-test --wait=true >> "$LOG" 2>&1
   ok "quota test passed; test pods removed (projects team-a and team-b kept)"
 }
+
+# T-123 (ADR-017): on several nodes, one Run:ai node pool per GPU vendor, from an oif node label. A project's quota is
+# then set per pool, which makes it a per-vendor quota (on one node ADR-015's ResourceQuota does that instead).
+VENDOR_LABEL=oif.ai/gpu-vendor
+pool_for() { if multi_node; then echo "$1"; else echo default; fi; }   # vendor: the node pool its GPUs are in
+runai_project() {   # name gpus: the project with that GPU quota in every vendor's pool (multi-node) or the default pool
+  if ! multi_node; then runai_api project "$1" "$2" "$2"; return; fi
+  local v q=(); for v in nvidia amd; do [ "$(gpu_count "$v")" -gt 0 ] && q+=("$v=$2"); done
+  runai_api project-pools "$1" "${q[@]}"
+}
+runai_pools_ok() {   # every vendor's pool Ready with all of that vendor's GPUs
+  local out v n; out=$(runai_api pools) || return 1
+  for v in nvidia amd; do n=$(gpu_count "$v"); [ "$n" -gt 0 ] || continue
+    grep -qE "^$v phase=Ready .* gpus $n\$" <<< "$out" || return 1; done
+}
+
+register_stage runai-pools
+stage_runai_pools() {
+  multi_node || { ok "single node: Run:ai's default node pool"; return 0; }
+  local name addr kind bdf dev drv host v seen=" "
+  while read -r name addr kind bdf dev drv; do
+    host=$(on_gpu_node "$addr" hostname)
+    [[ $seen == *" $host:"* && $seen != *" $host:$kind "* ]] \
+      && { warn "$name has NVIDIA and AMD GPUs: one node cannot be in two pools (ADR-015); it stays in the default pool"
+           kc label node "$host" "$VENDOR_LABEL-" >> "$LOG" 2>&1; continue; }
+    seen+="$host:$kind "
+    kc label node "$host" "$VENDOR_LABEL=$kind" --overwrite >> "$LOG" || die "cannot label node $host"
+  done < <(gpu_inventory)
+  ok "GPU nodes labelled $VENDOR_LABEL: $(kc get nodes -L "$VENDOR_LABEL" --no-headers | awk '$NF != "" && $NF != "<none>" {printf "%s=%s ", $1, $NF}')"
+  for v in nvidia amd; do
+    [ "$(gpu_count "$v")" -gt 0 ] || continue
+    runai_api node-pool "$v" "$VENDOR_LABEL" "$v" | sed 's/^/    /' | tee -a "$TLOG"
+    [ "${PIPESTATUS[0]}" = 0 ] || die "Run:ai node pool $v not created"
+  done
+  wait_for "Run:ai counts each vendor's GPUs in its pool" 300 15 runai_pools_ok \
+    || { runai_api pools | sed 's/^/    /' | tee -a "$TLOG"; die "a node pool is not Ready or misses GPUs (Run:ai UI: Resources, Node pools)"; }
+  runai_api pools | sed 's/^/    /' | tee -a "$TLOG"
+}
+stage_after runai-pools runai-verify   # before any project or quota test is created

@@ -5,7 +5,11 @@ Credentials come from the environment (RUNAI_URL, RUNAI_USER, RUNAI_PASSWORD, RU
 never printed. Commands:
   check                                  log in and print the clusters
   nodes                                  print each node with its GPU type and count as Run:ai sees them
-  project NAME GPU_DESERVED GPU_LIMIT    create the project if missing (GPU_LIMIT -1 = no limit), print its namespace
+  project NAME GPU_DESERVED GPU_LIMIT [POOL]  create the project if missing (GPU_LIMIT -1 = no limit; quota in node pool
+                                         POOL, default "default"), print its namespace
+  project-pools NAME POOL=GPUS...        create the project if missing with a GPU quota per node pool, print its namespace
+  node-pool NAME LABEL_KEY LABEL_VALUE   create the node pool if missing (nodes with that label) and wait until it is Ready
+  pools                                  print each node pool: name, phase, nodes and GPU count
   admin EMAIL                            make EMAIL a System administrator with the password in RUNAI_NEW_PASSWORD
   template FILE                          create or update the workload template in FILE (JSON)
   submit KIND NAME PROJECT TEMPLATE [COMMAND [ARGS]]  submit a training or workspace (KIND trainings, workspaces) from a template
@@ -73,7 +77,45 @@ def node_pool(token: str, cluster: str, name: str) -> dict:
     sys.exit(f"node pool {name} not found (GET /api/v1/node-pools: HTTP {status})")
 
 
-def project(token: str, name: str, deserved: float, limit: float) -> None:
+def all_pools(token: str) -> list:
+    status, out = call("GET", "/api/v1/node-pools", token=token)
+    if status != 200:
+        sys.exit(f"GET node-pools: HTTP {status} {out}")
+    if isinstance(out, dict):   # the list sits under a key ("nodePools", ...)
+        out = next((v for v in out.values() if isinstance(v, list)), [])
+    return out
+
+
+def create_node_pool(token: str, name: str, key: str, value: str) -> None:
+    """A node pool is a node label: every node with key=value belongs to it."""
+    cl = clusters(token)
+    if not cl:
+        sys.exit("no Run:ai cluster registered")
+    if not any(p.get("name") == name for p in all_pools(token)):
+        body = {"name": name, "labelKey": key, "labelValue": value, "clusterId": cl[0]["uuid"]}
+        status, out = call("POST", "/api/v1/node-pools", body, token)
+        if status not in (200, 201, 202):
+            sys.exit(f"create node pool {name}: HTTP {status} {out}")
+    for _ in range(60):   # Creating -> Ready once the cluster has synced it and found its nodes
+        p = next((x for x in all_pools(token) if x.get("name") == name), {})
+        if p.get("phase") == "Ready":
+            print(f"node pool {name} ({key}={value}) Ready")
+            return
+        time.sleep(5)
+    sys.exit(f"node pool {name} is not Ready after 5 min (phase {p.get('phase')}: {p.get('phaseMessage', '')})")
+
+
+def pools(token: str) -> None:
+    """Print each node pool: name, phase, its nodes and their GPUs as Run:ai counts them (the count last, for scripts)."""
+    status, out = call("GET", "/api/v1/nodes", token=token)
+    gpus = {n.get("name"): (n.get("gpuInfo") or {}).get("gpuCount", 0) for n in (out.get("nodes", []) if status == 200 else [])}
+    for p in all_pools(token):
+        members = (p.get("status") or {}).get("nodes") or []
+        print(f"{p.get('name')} phase={p.get('phase')} nodes={','.join(members) or '-'} gpus {sum(gpus.get(n, 0) for n in members)}")
+
+
+def project(token: str, name: str, quotas: dict) -> None:
+    """quotas: node pool name -> (deserved, limit); limit -1 or equal to deserved sends no limit."""
     status, out = call("GET", "/api/v1/org-unit/projects", token=token)
     if status != 200:
         sys.exit(f"GET projects: HTTP {status} {out}")
@@ -84,11 +126,14 @@ def project(token: str, name: str, deserved: float, limit: float) -> None:
             sys.exit("no Run:ai cluster registered")
         # with Run:ai's over-quota feature off (the default) the quota is a hard limit and the API rejects
         # over-quota weights; a limit is only sent when it differs from the quota
-        gpu = {"deserved": deserved}
-        if 0 <= limit != deserved:
-            gpu["limit"] = limit
-        pool = node_pool(token, cl[0]["uuid"], "default")
-        body = {"name": name, "clusterId": cl[0]["uuid"], "resources": [{"nodePool": {"id": pool["id"], "name": pool["name"]}, "gpu": gpu}]}
+        resources = []
+        for pool_name, (deserved, limit) in quotas.items():
+            gpu = {"deserved": deserved}
+            if 0 <= limit != deserved:
+                gpu["limit"] = limit
+            pool = node_pool(token, cl[0]["uuid"], pool_name)
+            resources.append({"nodePool": {"id": pool["id"], "name": pool["name"]}, "gpu": gpu})
+        body = {"name": name, "clusterId": cl[0]["uuid"], "resources": resources}
         status, out = call("POST", "/api/v1/org-unit/projects", body, token)
         if status not in (200, 201, 202):
             sys.exit(f"create project {name}: HTTP {status} {out}")
@@ -221,8 +266,19 @@ def main() -> None:
             print(c.get("name"), c.get("uuid"), c.get("version", ""), c.get("lastLiveness", ""))
     elif cmd == "nodes":
         nodes(token)
-    elif cmd == "project" and len(sys.argv) == 5:
-        project(token, sys.argv[2], float(sys.argv[3]), float(sys.argv[4]))
+    elif cmd == "project" and len(sys.argv) in (5, 6):
+        pool = sys.argv[5] if len(sys.argv) == 6 else "default"
+        project(token, sys.argv[2], {pool: (float(sys.argv[3]), float(sys.argv[4]))})
+    elif cmd == "project-pools" and len(sys.argv) >= 4:
+        quotas = {}
+        for q in sys.argv[3:]:
+            pool, _, gpus = q.partition("=")
+            quotas[pool] = (float(gpus), -1)
+        project(token, sys.argv[2], quotas)
+    elif cmd == "node-pool" and len(sys.argv) == 5:
+        create_node_pool(token, *sys.argv[2:])
+    elif cmd == "pools":
+        pools(token)
     elif cmd == "admin" and len(sys.argv) == 3:
         admin(token, sys.argv[2])
     elif cmd == "template" and len(sys.argv) == 3:

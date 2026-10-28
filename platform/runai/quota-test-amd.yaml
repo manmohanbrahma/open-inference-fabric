@@ -6,6 +6,7 @@ metadata:
   namespace: ${NS}
   labels:
     app.kubernetes.io/part-of: oif-quota-test
+    runai/node-pool: ${NODE_POOL}       # default on one node; the vendor's pool on several (T-123)
 spec:
   schedulerName: runai-scheduler
   restartPolicy: Never

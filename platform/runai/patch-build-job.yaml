@@ -13,6 +13,8 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      # on the node that runs oif: the source, caches and the image tarball are host folders there (multi-node, T-123)
+      nodeSelector: {kubernetes.io/hostname: "${BUILD_NODE}"}
       containers:
         - name: build
           image: ${BUILD_IMAGE}
