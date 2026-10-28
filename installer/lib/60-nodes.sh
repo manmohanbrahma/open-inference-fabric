@@ -270,3 +270,12 @@ on_gpu_node() {   # address command: run where that GPU is (this host or another
 gpu_resource_is() { [ "$(allocatable_sum "$1")" = "$2" ]; }   # resource count: the cluster offers exactly that many
 nodes_rev() {   # the node stages' list and code: a change reaches every node on the next install
   { echo "${NODE_STAGES[*]}"; cat "$OIF_HOME"/installer/stages/[0-3]0-*.sh; } | sha256sum | cut -c1-12; }
+nvidia_driver_oldest() {   # the oldest NVIDIA driver version on any node with an NVIDIA GPU (empty: none)
+  local name addr kind _r v out=""
+  while read -r name addr kind _r; do
+    [ "$kind" = nvidia ] || continue
+    v=$(on_gpu_node "$addr" "nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1" 2>/dev/null) || v=""
+    [ -n "$v" ] && out+="$v"$'\n'
+  done < <(gpu_inventory)
+  sort -V <<< "$out" | grep . | head -1 || true
+}

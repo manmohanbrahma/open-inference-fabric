@@ -106,7 +106,7 @@ stage_runai() {
 RUNAI_FRACTIONS_MIN_DRIVER=615   # Run:ai 3.0 support matrix: GPU fractions need driver r615 or later
 register_stage runai-fractions RUNAI_VERSION
 stage_runai_fractions() {   # the fractioning daemons (fractiond, mpsd) only where the driver supports them
-  local v; v=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+  local v; v=$(nvidia_driver_oldest)   # on the NVIDIA nodes, wherever they are (multi-node: not this host)
   if [ -n "$v" ] && [ "${v%%.*}" -lt $RUNAI_FRACTIONS_MIN_DRIVER ]; then
     # the chart's CR targets every node with nvidia.com/gpu.present; adding a label no node carries keeps the
     # daemons off (mpsd crash-loops on older drivers). A Run:ai upgrade re-creates the CR, so this stage re-runs.
