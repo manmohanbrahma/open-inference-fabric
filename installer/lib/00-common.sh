@@ -69,7 +69,7 @@ stage() { local s=$1; done_ "$s" && return 0
   "stage_${s//-/_}"; stage_want "$s" > "$DONE/$s"; }
 stage_after() {   # name other: run stage name right after stage other (a later file can place its stage earlier)
   local s out=(); for s in "${STAGES[@]}"; do [ "$s" = "$1" ] || out+=("$s"); [ "$s" = "$2" ] && out+=("$1"); done; STAGES=("${out[@]}"); }
-run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; [ "$s" = "${1:-}" ] && return 0; done; }   # [last stage]
+run_stages() { local s; for s in "${STAGES[@]}"; do stage "$s"; [ "$s" = "${1:-}" ] && return 0; done; return 0; }   # [last stage]
 
 # ---------------------------------------------------------------- small helpers
 retry() {   # cmd...: up to 4 tries, 15/30/45 s apart

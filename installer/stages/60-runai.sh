@@ -371,7 +371,7 @@ stage_runai_pools() {
     seen+="$host:$kind "
     kc label node "$host" "$VENDOR_LABEL=$kind" --overwrite >> "$LOG" || die "cannot label node $host"
   done < <(gpu_inventory)
-  ok "GPU nodes labelled $VENDOR_LABEL: $(kc get nodes -L "$VENDOR_LABEL" --no-headers | awk '$NF != "" && $NF != "<none>" {printf "%s=%s ", $1, $NF}')"
+  ok "GPU nodes labelled $VENDOR_LABEL: $(kc get nodes -l "$VENDOR_LABEL" -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.labels.oif\.ai/gpu-vendor} {end}')"
   for v in nvidia amd; do
     [ "$(gpu_count "$v")" -gt 0 ] || continue
     runai_api node-pool "$v" "$VENDOR_LABEL" "$v" | sed 's/^/    /' | tee -a "$TLOG"
