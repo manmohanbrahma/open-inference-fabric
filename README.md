@@ -2,7 +2,7 @@
 
 **One open-source platform to schedule, serve, benchmark and observe LLMs on NVIDIA and AMD GPUs.**
 
-Open Inference Fabric (OIF) assembles NVIDIA's open-source AI infrastructure software into a suite you can install on a GPU server with one command:
+Open Inference Fabric (OIF) assembles open-source AI infrastructure into a suite you can install on GPU servers with one command:
 
 | Layer | Built on |
 | --- | --- |
@@ -12,11 +12,11 @@ Open Inference Fabric (OIF) assembles NVIDIA's open-source AI infrastructure sof
 | Observability | Prometheus and Grafana with DCGM and AMD device metrics exporters, normalised into one vendor-neutral schema |
 | Platform | Upstream Kubernetes (kubeadm), NVIDIA GPU Operator, AMD GPU Operator |
 
-> **Status: v0.1 in development.** The `oif` command line and host check work; the platform stages are being added one step at a time. Start with the [install and deployment guides](docs/guides/README.md); progress is in [TASKS.md](TASKS.md).
+> **Status: v0.1 in development.** Multi-node HA and dual-vendor orchestration are advanced; serving and gateway are next. Start with the [install guides](docs/guides/README.md); progress is in [TASKS.md](TASKS.md).
 
 ## Why
 
-Teams with both NVIDIA and AMD GPUs run separate stacks per vendor: different serving endpoints, different dashboards, no shared quotas, and benchmarks that cannot be compared. OIF puts both vendors behind one scheduler, one API, one benchmark tool and one set of dashboards.
+Teams with both NVIDIA and AMD GPUs run separate stacks per vendor: different serving endpoints, different dashboards, no shared quotas, and benchmarks that cannot be compared. OIF puts both vendors behind one scheduler, one API, one benchmark tool and one set of dashboards — with a clean, reversible installer.
 
 ## Usage
 
@@ -33,21 +33,24 @@ sudo ./oif bench --model qwen3-0.6b        # (Project 2) AIPerf sweep on each GP
 
 | Document | Purpose |
 | --- | --- |
-| [PRD](docs/PRD.md) | What we are building and why; MVP and success criteria |
+| [PRD](docs/PRD.md) | What we are building and why; goals and success criteria |
+| [SDLC](docs/SDLC.md) | How we build, test, document and release (process for humans and agents) |
 | [Architecture](docs/ARCHITECTURE.md) | Layers, flows, telemetry schema, repository layout |
 | [Design](docs/DESIGN.md) | CLI, dashboard and report conventions |
-| [Rules](docs/RULES.md) | How code is written and changed (people and AI assistants) |
+| [Rules](docs/RULES.md) | How code is written and changed |
 | [Tasks](TASKS.md) | What we build next, in order |
-| [Decisions](docs/DECISIONS.md) | Why each architectural choice was made |
+| [Decisions](docs/DECISIONS.md) | Architecture Decision Records (ADRs) |
 | [Memory](docs/MEMORY.md) | Current project state |
 | [Test plan](docs/TEST_PLAN.md) | What "working" means |
-| [Install guides](docs/guides/README.md) | Step-by-step install and deployment, one guide per step |
+| [Install guides](docs/guides/README.md) | Step-by-step install and deployment |
+| [Design sketches](docs/design/) | Vendor-agnostic job model, lab acceptance checks |
+| [Presentations](presentations/) | Feature and product decks |
 | [Security](docs/SECURITY.md) | Security requirements |
 | [Research](docs/RESEARCH.md) | Sources behind the decisions |
 
 ## Reference hardware
 
-Developed and tested on one server: AMD EPYC 9684X, 751 GiB RAM, NVIDIA RTX A6000 and AMD Radeon PRO W7900, Ubuntu 26.04.
+Developed and tested on one server: AMD EPYC 9684X, 751 GiB RAM, NVIDIA RTX A6000 and AMD Radeon PRO W7900, Ubuntu 26.04. Multi-node work uses the [hybrid-gpu-lab](https://github.com/manmohanbrahma/hybrid-gpu-lab).
 
 ## Licence
 

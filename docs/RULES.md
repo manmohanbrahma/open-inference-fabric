@@ -2,10 +2,12 @@
 
 These rules apply to every change, by a person or by an AI assistant.
 
+Process overview: [SDLC.md](SDLC.md).
+
 ## Before coding
 
-- Read the relevant docs: PRD.md, ARCHITECTURE.md, DESIGN.md, this file, TASKS.md, DECISIONS.md and MEMORY.md.
-- Work on one task from TASKS.md at a time. Explain the plan for it before changing files.
+- Read the relevant docs: PRD.md, ARCHITECTURE.md, DESIGN.md, this file, TASKS.md, DECISIONS.md, MEMORY.md and SDLC.md.
+- Work on one task from TASKS.md at a time. Mark it `[~]` (optionally with agent name). Explain the plan for it before changing files.
 - Inspect what already exists and reuse it. Do not modify files unrelated to the task.
 - Do not reverse a decision in DECISIONS.md silently; propose a new ADR instead.
 
@@ -35,8 +37,9 @@ These rules apply to every change, by a person or by an AI assistant.
 ## Testing
 
 - Every task adds or updates a test or a check in `tests/` and states how it was verified.
-- Run `shellcheck`, `yamllint`, unit tests and the smoke test before committing.
+- Run `shellcheck`, `yamllint`, unit tests and the smoke/lab tests relevant to the task before committing.
 - A failing test is fixed before the next task starts.
+- Multi-node and topology work must pass the regression gate in TEST_PLAN.md (T-121, T-122, verify-clean).
 
 ## Git
 
@@ -45,5 +48,12 @@ These rules apply to every change, by a person or by an AI assistant.
 
 ## After each task
 
-- Write or update the install and deployment guide for the step in `docs/guides/` (layout in `docs/guides/README.md`), from a real run on the reference host: commands, expected output, checks, host changes, troubleshooting. A step is not done without its guide.
+- Write or update the install and deployment guide for the step in `docs/guides/` (layout in `docs/guides/README.md`), from a real run on the reference host or lab: commands, expected output, checks, host changes, troubleshooting. A step is not done without its guide.
 - Update TASKS.md (status), MEMORY.md (current state, next step) and DECISIONS.md (if a decision was made).
+- Substantial features should get or update a presentation under `presentations/`.
+
+## Multi-agent handoff
+
+- Claim tasks explicitly (`[~]` + agent name).
+- Prefer Claude Code (or humans) for installer/stages/tests; Grok (or humans) for ADRs, design docs, PRD, presentations and acceptance criteria.
+- When finishing a slice that needs docs or a presentation, leave a one-line note in TASKS.md or the PR.
