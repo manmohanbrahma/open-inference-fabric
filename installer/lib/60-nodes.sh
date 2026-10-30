@@ -4,11 +4,12 @@
 # OIF_NODES="192.168.120.11:control 192.168.120.12:control ... 192.168.120.21:worker" (empty: single node); an entry may
 # carry a label for logs and records, "cp1=192.168.120.11:control". Kubernetes names each node by its hostname anyway.
 
-NODE_STAGES=(preflight host-packages kernel containerd nvidia-driver amd-firmware gpu-isolation reboot host-verify k8s-packages)
-NODE_SETTINGS=(INSTALL_DIR INSTALL_USER NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS REBOOT_OK)   # all a node stage reads
+NODE_STAGES=(preflight host-packages kernel storage-host containerd nvidia-driver amd-firmware gpu-isolation reboot host-verify k8s-packages)
+NODE_SETTINGS=(INSTALL_DIR INSTALL_USER NVIDIA_GPUS AMD_GPUS ISOLATE_GPUS REBOOT_OK LONGHORN_NODE)   # all a node stage reads
 NODE_SRC=/var/lib/oif/src           # oif's copy on a node; inside the node's state folder, so uninstall removes it
 CLUSTER_KEY=$STATE/ssh/id_ed25519   # oif's own key, created on the first node (root only)
 NODE_REBOOT_RC=75                   # a node stage needs a reboot: the first node reboots the node and runs it again
+JOINED_MARK=/etc/kubernetes/kubelet.conf      # a node that has it is in the cluster already
 
 multi_node() { [ -n "${OIF_NODES:-}" ]; }
 nodes_list() {   # print "label address role" per node, in the order given; the label is the address when none is given
@@ -16,6 +17,22 @@ nodes_list() {   # print "label address role" per node, in the order given; the 
     if [[ $e == *=* ]]; then printf '%s %s %s\n' "${e%%=*}" "$a" "${e##*:}"; else printf '%s %s %s\n' "$a" "$a" "${e##*:}"; fi; done; }
 other_nodes() { nodes_list | tail -n +2; }   # every node but the first, which runs oif
 node_user() { echo "${OIF_NODE_USER:-$INSTALL_USER}"; }
+control_count() { nodes_list | awk '$3 == "control"' | wc -l; }
+
+# The platform (Run:ai, monitoring, ingress, storage) runs on the control-plane nodes, labelled with Run:ai's system-node
+# role; with three or more of them its data lives on Longhorn volumes with a copy on each, so it survives losing one
+# (ADR-021). GPU nodes run workloads only.
+SYSTEM_LABEL=node-role.kubernetes.io/runai-system
+platform_ha() { multi_node && [ "$(control_count)" -ge 3 ]; }
+platform_sc() { if platform_ha; then echo longhorn; else echo local-path; fi; }   # StorageClass of the platform's data
+longhorn_here() {   # does this node hold Longhorn replicas? (the first node decides; a node reads its setting)
+  if [ "${OIF_NODE:-0}" = 1 ]; then [ "${LONGHORN_NODE:-no}" = yes ]; else platform_ha; fi; }
+platform_render() {   # template under platform/: into the state folder, with the platform's node label and StorageClass
+  export SYSTEM_LABEL PLATFORM_SC; PLATFORM_SC=$(platform_sc)
+  render "$OIF_HOME/platform/$1" > "$STATE/${1##*/}" || die "cannot render platform/$1"; }
+node_name_of() {   # address: the Kubernetes node name of the node with that address
+  kc get nodes -o jsonpath="{range .items[*]}{.metadata.name} {.status.addresses[?(@.type=='InternalIP')].address}{'\n'}{end}" \
+    | awk -v a="$1" '$2 == a {print $1}'; }
 
 v_nodes() {   # [label=]address:role ..., the first one this host and a control-plane node
   [ -z "$1" ] && return 0
@@ -114,18 +131,20 @@ node_push() {   # address: copy this oif (without settings, .git or test caches)
     | NODE_SSH_STDIN=1 node_ssh "$1" "sudo mkdir -p $NODE_SRC && sudo tar -xzf - -C $NODE_SRC && sudo chown -R root:root $NODE_SRC" \
     || die "cannot copy oif to $1"
 }
-node_settings() {   # what a node needs: its share of the settings, never the cluster's secrets
-  local k; for k in "${NODE_SETTINGS[@]}"; do
+node_settings() {   # role: what a node needs, its share of the settings, never the cluster's secrets
+  local k ln=no; [ "${1:-}" = control ] && platform_ha && ln=yes
+  for k in "${NODE_SETTINGS[@]}"; do
     case $k in NVIDIA_GPUS|AMD_GPUS|ISOLATE_GPUS) printf '%s=%q\n' "$k" "" ;;   # every GPU of the node, none isolated
                INSTALL_USER) printf '%s=%q\n' "$k" "$(node_user)" ;;
                REBOOT_OK) printf '%s=%q\n' "$k" no ;;                          # the first node reboots it (NODE_REBOOT_RC)
+               LONGHORN_NODE) printf '%s=%q\n' "$k" "$ln" ;;                   # a control-plane node of an HA platform
                *) printf '%s=%q\n' "$k" "${!k:-}" ;; esac; done; }
-node_install() {   # name address: node stages until done, rebooting the node when a stage asks for it
-  local name=$1 addr=$2 rc boot n=0
+node_install() {   # name address role: node stages until done, rebooting the node when a stage asks for it
+  local name=$1 addr=$2 role=${3:-worker} rc boot n=0
   rec "NODE $addr $name"
   while :; do
     node_push "$addr"
-    rc=0; node_settings | NODE_SSH_STDIN=1 node_ssh "$addr" "sudo $NODE_SRC/oif _node" 2>&1 | sed -u "s/^/  [$name] /" | tee -a "$TLOG" || rc=${PIPESTATUS[1]}
+    rc=0; node_settings "$role" | NODE_SSH_STDIN=1 node_ssh "$addr" "sudo $NODE_SRC/oif _node" 2>&1 | sed -u "s/^/  [$name] /" | tee -a "$TLOG" || rc=${PIPESTATUS[1]}
     [ "$rc" = 0 ] && { ok "$name: node stages done"; return 0; }
     [ "$rc" = "$NODE_REBOOT_RC" ] || die "$name: node stages failed (exit $rc; on the node: sudo tail -50 $LOG)"
     n=$((n + 1)); [ $n -le 2 ] || die "$name: still asks for a reboot after two"
@@ -144,7 +163,7 @@ stage_nodes() {   # the node stages on every other node, before the cluster is f
   local name addr role
   while read -r -u 3 name addr role; do node_ok "$addr" || die "$name ($addr) is not reachable with the cluster key: run 'sudo $SELF install --reconfigure' in a terminal"
   done 3< <(other_nodes)
-  while read -r -u 3 name addr role; do log "node $name ($addr, $role)"; node_install "$name" "$addr"; done 3< <(other_nodes)
+  while read -r -u 3 name addr role; do log "node $name ($addr, $role)"; node_install "$name" "$addr" "$role"; done 3< <(other_nodes)
 }
 
 node_worker() {   # on a node: settings on stdin, then the node stages; exit NODE_REBOOT_RC when a reboot is due
@@ -222,7 +241,7 @@ node_join() {   # on a node: join settings on stdin, then kubeadm join (recorded
     esac || die "unexpected join setting '$k'"
     printf -v "$k" '%s' "$v"
   done
-  if [ -f /etc/kubernetes/kubelet.conf ]; then ok "already joined"; return 0; fi
+  if [ -f "$JOINED_MARK" ]; then ok "already joined"; return 0; fi
   rec "TEARDOWN kubernetes"
   systemctl enable kubelet >/dev/null 2>&1
   export API_ENDPOINT JOIN_TOKEN JOIN_CA_HASH JOIN_CERT_KEY NODE_IP

@@ -24,7 +24,8 @@ for p in /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d /var/lib/
   /etc/modprobe.d/90-oif-nouveau.conf /etc/modprobe.d/90-oif-vfio.conf /etc/modules-load.d/90-oif.conf \
   /etc/modules-load.d/90-oif-vfio.conf /etc/sysctl.d/90-oif.conf /etc/systemd/system/oif-resume.service \
   /usr/local/bin/helm /usr/local/nvidia /etc/cdi /var/run/cdi /opt/local-path-provisioner /opt/cni \
-  /var/lib/amd-metrics-exporter /var/run/exporter /var/log/oif-install.log "$HOME/.kube/config" "$HOME/oif-ca.crt"; do
+  /var/lib/amd-metrics-exporter /var/run/exporter /var/log/oif-install.log "$HOME/.kube/config" "$HOME/oif-ca.crt" \
+  /var/lib/longhorn /dev/longhorn /etc/modules-load.d/90-oif-longhorn.conf /etc/multipath/conf.d/90-oif-longhorn.conf; do
   [ -e "$p" ] && trace "$p"
 done
 sudo -n test -e /var/lib/oif 2>/dev/null && trace /var/lib/oif   # root-only; checked when sudo needs no password
@@ -43,6 +44,9 @@ swapon --show=NAME --noheadings | grep -q . && clean "swap on: $(swapon --show=N
 for m in br_netfilter vfio_pci; do lsmod | grep -q "^$m " && info "module $m loaded (unloads at the next reboot)"; done
 ifs=$(ip -o link show | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(cali|vxlan\.calico|tunl0|kube-ipvs0|cni0|flannel)')
 [ -n "$ifs" ] && trace "$(wc -l <<< "$ifs") Kubernetes network interfaces ($(head -3 <<< "$ifs" | xargs) ...)"
+rt=$(ip -4 route show proto 80 2>/dev/null)
+[ -n "$rt" ] && trace "$(wc -l <<< "$rt") Calico route(s) left ($(head -1 <<< "$rt"))"
+ses=(/sys/class/iscsi_session/*); [ -e "${ses[0]}" ] && trace "${#ses[@]} iSCSI session(s) still open (Longhorn volumes): ${ses[*]##*/}"
 [ "$left" = "$n" ] && clean "no Kubernetes services, network interfaces or swap changes"
 info "firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0"
 

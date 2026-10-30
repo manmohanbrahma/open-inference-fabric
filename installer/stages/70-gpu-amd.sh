@@ -63,6 +63,10 @@ teardown_amd_gpu_operator() {   # DeviceConfig, then the chart, then host leftov
   fi
   # seen on the reference host: the exporter's health binary and gRPC socket, and its runtime folder
   rm -rf /var/lib/amd-metrics-exporter /var/run/exporter 2>/dev/null || true
+  local name addr kind   # multi-node: the exporter ran on the AMD nodes, which are still reachable at this point
+  while read -r -u 3 name addr kind _; do
+    [ "$kind" = amd ] && { on_gpu_node "$addr" "sudo rm -rf /var/lib/amd-metrics-exporter /var/run/exporter" >/dev/null 2>&1 || warn "$name: AMD exporter folders not removed"; }
+  done 3< <(multi_node && gpu_inventory || true)
   ok "AMD GPU Operator removed"
 }
 

@@ -1,0 +1,13 @@
+# Multi-node, on top of haproxy-values.yaml: the ingress (Run:ai and Grafana UIs) on the platform nodes, its two
+# replicas on different nodes so the UIs stay up when one node goes down.
+controller:
+  nodeSelector:
+    ${SYSTEM_LABEL}: "true"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: kubernetes-ingress
+          app.kubernetes.io/instance: haproxy-ingress

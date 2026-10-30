@@ -14,7 +14,8 @@ stage_prometheus() {
   kc -n monitoring create secret generic grafana-admin --from-literal=admin-user=admin --from-file=admin-password="$pw" \
     --dry-run=client -o yaml | kc apply -f - >> "$LOG"; rm -f "$pw"
   log "kube-prometheus-stack $KPS_VERSION (3-5 min)"
-  hl upgrade --install kps "$chart" -n monitoring -f "$OIF_HOME/platform/observability/kps-values.yaml" --wait --timeout 15m >> "$LOG" 2>&1 \
+  local more=(); multi_node && { platform_render observability/kps-values-multinode.yaml; more=(-f "$STATE/kps-values-multinode.yaml"); }
+  hl upgrade --install kps "$chart" -n monitoring -f "$OIF_HOME/platform/observability/kps-values.yaml" "${more[@]}" --wait --timeout 15m >> "$LOG" 2>&1 \
     || die "kube-prometheus-stack failed (kubectl -n monitoring get pods)"
   ok "Prometheus, Grafana and Alertmanager running (namespace monitoring)"
 }
@@ -25,7 +26,8 @@ stage_ingress() {
   [ -s "$chart" ] || fetch_pinned "https://github.com/haproxytech/helm-charts/releases/download/kubernetes-ingress-$HAPROXY_INGRESS_VERSION/kubernetes-ingress-$HAPROXY_INGRESS_VERSION.tgz" "$HAPROXY_INGRESS_SHA256" "$chart"
   export INGRESS_IP; INGRESS_IP=$(first_ip "$METALLB_RANGE")
   render "$OIF_HOME/platform/ingress/haproxy-values.yaml" > "$STATE/haproxy-values.yaml"
-  hl upgrade --install haproxy-ingress "$chart" -n haproxy-controller --create-namespace -f "$STATE/haproxy-values.yaml" --wait --timeout 10m >> "$LOG" 2>&1 \
+  local more=(); multi_node && { platform_render ingress/haproxy-values-multinode.yaml; more=(-f "$STATE/haproxy-values-multinode.yaml"); }
+  hl upgrade --install haproxy-ingress "$chart" -n haproxy-controller --create-namespace -f "$STATE/haproxy-values.yaml" "${more[@]}" --wait --timeout 10m >> "$LOG" 2>&1 \
     || die "HAProxy ingress controller failed (kubectl -n haproxy-controller get pods)"
   ip=$(kc -n haproxy-controller get svc haproxy-ingress-kubernetes-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
   [ "$ip" = "$INGRESS_IP" ] || die "ingress got address '$ip', expected $INGRESS_IP (is it free in the MetalLB pool?)"
@@ -85,7 +87,7 @@ register_stage runai RUNAI_VERSION
 stage_runai() {
   local bin=$STATE/bin/runai-installer-$RUNAI_VERSION w=$STATE/runai rc=0; mkdir -p "$STATE/bin" "$w"; chmod 700 "$w"
   [ -x "$bin" ] || { fetch_pinned "https://github.com/dsx-ai-factory/run-ai/releases/download/$RUNAI_VERSION/runai-installer-linux-amd64" "$RUNAI_INSTALLER_SHA256" "$bin"; chmod 755 "$bin"; }
-  RUNAI_DOMAIN=$(runai_domain)
+  RUNAI_DOMAIN=$(runai_domain); runai_placement
   export RUNAI_VERSION RUNAI_CLUSTER_NAME RUNAI_DOMAIN RUNAI_TLS_CERT=$PKI/tls.crt RUNAI_TLS_KEY=$PKI/tls.key RUNAI_CA_CERT=$PKI/ca.crt
   render "$OIF_HOME/platform/runai/config.yaml" > "$w/config.yaml"; chmod 600 "$w/config.yaml"
   getent hosts "$RUNAI_DOMAIN" >/dev/null || die "$RUNAI_DOMAIN does not resolve from this host (DNS for sslip.io blocked?)"
@@ -101,6 +103,27 @@ stage_runai() {
   grep -viE 'password|secret|token|key' "$w/install.txt" | tail -40 | redact | sed 's/^/    /'
   [ $rc = 0 ] || die "Run:ai install failed (sudo less $w/install.txt; sudo less $w/logs/runai-installer.log)"
   ok "Run:ai $RUNAI_VERSION installed"
+}
+
+runai_placement() {   # installer settings that keep Run:ai on the platform nodes (multi-node), each as one line of JSON
+  export RUNAI_SYSTEM_NODES RUNAI_CP_VALUES
+  if ! multi_node; then RUNAI_SYSTEM_NODES='{"enabled": false}'; RUNAI_CP_VALUES='{}'; return 0; fi
+  RUNAI_SYSTEM_NODES="{\"enabled\": true, \"mode\": \"required\", \"label\": \"$SYSTEM_LABEL\", \"manageLabels\": false}"
+  # Helm --set values. The chart copies these subcharts' affinity from a YAML anchor, so the installer's global
+  # affinity does not reach them; their volumes go on the platform's StorageClass.
+  RUNAI_CP_VALUES=$(LABEL=$SYSTEM_LABEL SC=$(platform_sc) python3 -c '
+import json, os
+label, sc = os.environ["LABEL"], os.environ["SC"]
+req = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0]"
+v = {}
+for p in ("postgresql.primary", "thanos.query", "thanos.receive", "nats"):
+    v[f"{p}.{req}.key"] = label
+    v[f"{p}.{req}.operator"] = "Exists"
+for p in ("postgresql.primary", "thanos.receive", "nats"):
+    v[f"{p}.persistence.storageClass"] = sc
+v["keycloakx.affinity"] = ("nodeAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    nodeSelectorTerms:\n"
+                           f"      - matchExpressions:\n          - key: {label}\n            operator: Exists\n")
+print(json.dumps(v))')
 }
 
 RUNAI_FRACTIONS_MIN_DRIVER=615   # Run:ai 3.0 support matrix: GPU fractions need driver r615 or later
@@ -264,9 +287,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   ok "patched image $img loaded into containerd"
   runai_patch_spread "$comp" "$img"
 }
-this_node() {   # this host's Kubernetes node name (the node with HOST_IP)
-  kc get nodes -o jsonpath="{range .items[*]}{.metadata.name} {.status.addresses[?(@.type=='InternalIP')].address}{'\n'}{end}" \
-    | awk -v a="$HOST_IP" '$2 == a {print $1}'; }
+this_node() { node_name_of "$HOST_IP"; }   # this host's Kubernetes node name
 runai_patch_spread() {   # component image: load the patched image on every other node too (Run:ai pods run on any node)
   multi_node || return 0
   local tar=$STATE/build/runai/$1.tar name addr role n=0 has="sudo ctr -n k8s.io images ls -q | grep -xF '$2' >/dev/null"
