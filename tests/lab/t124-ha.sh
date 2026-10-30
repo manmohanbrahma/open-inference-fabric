@@ -66,12 +66,12 @@ ns = set(sys.argv[1].split())
 bad = [o["metadata"]["namespace"] + "/" + o["metadata"]["name"] for o in json.load(sys.stdin)["items"]
        if o["metadata"]["namespace"] in ns and o["spec"].get("replicas", 1) and not o.get("status", {}).get("readyReplicas")]
 print(" ".join(bad)); sys.exit(1 if bad else 0)' "$PLATFORM_NS"; }
-pg() { kc -n oif-db get cluster oif-pg -o jsonpath="{.status.$1}" 2>/dev/null; }
+pg() { kc -n oif-db get clusters.postgresql.cnpg.io oif-pg -o jsonpath="{.status.$1}" 2>/dev/null; }
 pg_moved() {   # the database primary runs on another node and at least two instances are ready
   local p n; p=$(pg currentPrimary); [ -n "$p" ] || return 1
   n=$(kc -n oif-db get pod "$p" -o jsonpath='{.spec.nodeName}' 2>/dev/null)
   [ -n "$n" ] && [ "$n" != "$DOWN" ] && [ "$(pg readyInstances)" -ge 2 ]; }
-pg_complete() { [ "$(pg readyInstances)" = "$(kc -n oif-db get cluster oif-pg -o jsonpath='{.spec.instances}')" ]; }
+pg_complete() { [ "$(pg readyInstances)" = "$(kc -n oif-db get clusters.postgresql.cnpg.io oif-pg -o jsonpath='{.spec.instances}')" ]; }
 probe() {   # every 5 s until told to stop: "seconds ui grafana api" (1 = answered)
   local t0=$SECONDS; while [ -f "$PKI/probing" ]; do
     echo "$((SECONDS - t0)) $(ui_ok >/dev/null 2>&1 && echo 1 || echo 0) $(grafana_ok >/dev/null 2>&1 && echo 1 || echo 0) $(api_ok && echo 1 || echo 0)"

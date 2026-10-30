@@ -31,9 +31,9 @@ stage_platform_db() {
   render "$OIF_HOME/platform/database/oif-pg.yaml" | kc apply -f - >> "$LOG" 2>&1 || die "database cluster rejected (kubectl -n $PG_NS get cluster)"
   log "PostgreSQL: $n instances, one per control-plane node (3-5 min)"
   wait_for "database cluster healthy ($n instances)" 900 10 pg_ready "$n" \
-    || die "database cluster not ready (kubectl -n $PG_NS get cluster oif-pg; kubectl -n $PG_NS get pods)"
+    || die "database cluster not ready (kubectl -n $PG_NS get clusters.postgresql.cnpg.io oif-pg; kubectl -n $PG_NS get pods)"
   wait_for "database grafana created" 300 5 pg_db_applied || die "database grafana not created (kubectl -n $PG_NS describe database oif-pg-grafana)"
-  ok "PostgreSQL $n instances (primary $(kc -n "$PG_NS" get cluster oif-pg -o jsonpath='{.status.currentPrimary}')): databases backend (Run:ai) and grafana, at $PG_HOST"
+  ok "PostgreSQL $n instances (primary $(kc -n "$PG_NS" get clusters.postgresql.cnpg.io oif-pg -o jsonpath='{.status.currentPrimary}')): databases backend (Run:ai) and grafana, at $PG_HOST"
 }
 db_password() {   # secret name in the database namespace: its password, or a new random one
   local p; p=$(kc -n "$PG_NS" get secret "$1" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
@@ -46,7 +46,7 @@ db_secret() {   # namespace name type key=value...: create or update, the values
     || { rm -rf "$d"; die "secret $ns/$name rejected"; }
   rm -rf "$d"; }
 pg_ready() {   # instances: the cluster reports them all ready and healthy
-  kc -n "$PG_NS" get cluster oif-pg -o json 2>/dev/null | N=$1 python3 -c 'import json, os, sys
+  kc -n "$PG_NS" get clusters.postgresql.cnpg.io oif-pg -o json 2>/dev/null | N=$1 python3 -c 'import json, os, sys
 s = json.load(sys.stdin).get("status", {})
 sys.exit(0 if s.get("readyInstances") == int(os.environ["N"]) and s.get("phase") == "Cluster in healthy state" else 1)'; }
 pg_db_applied() { [ "$(kc -n "$PG_NS" get database oif-pg-grafana -o jsonpath='{.status.applied}' 2>/dev/null)" = true ]; }
