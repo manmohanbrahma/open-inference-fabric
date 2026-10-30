@@ -4,6 +4,9 @@
 KCFG=/etc/kubernetes/admin.conf
 kc() { kubectl --kubeconfig "$KCFG" "$@"; }
 hl() { helm --kubeconfig "$KCFG" "$@"; }
+# helm (and the Run:ai installer, which uses helm's library) keeps its cache and repositories under $HOME, which is / in
+# the background job: kept in the state folder instead, so uninstall removes them with it
+export HELM_CACHE_HOME=$STATE/helm/cache HELM_CONFIG_HOME=$STATE/helm/config HELM_DATA_HOME=$STATE/helm/data
 
 render() {   # template: print it with ${VAR} replaced from the environment (only the variables named in it)
   python3 - "$1" <<'PY'

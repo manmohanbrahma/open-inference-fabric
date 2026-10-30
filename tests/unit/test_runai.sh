@@ -20,12 +20,19 @@ eq "$RUNAI_SYSTEM_NODES" '{"enabled": false}' "single node, system nodes:"; eq "
 OIF_NODES="cp1=192.0.2.11:control cp2=192.0.2.12:control cp3=192.0.2.13:control gpu=192.0.2.21:worker"; runai_placement
 eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1]); print(d["enabled"], d["mode"], d["label"], d["manageLabels"], d["selector"])' "$RUNAI_SYSTEM_NODES")" \
   "True required node-role.kubernetes.io/runai-system False {'node-role.kubernetes.io/runai-system': 'true'}" "system nodes:"
+# three control-plane nodes (ADR-022): two copies of everything, spread; the database is the CloudNativePG cluster
 eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1])
-print(len(d), d["postgresql.primary.persistence.storageClass"], d["thanos.receive.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator"],
-      "key: node-role.kubernetes.io/runai-system" in d["keycloakx.affinity"], any("," in v for v in d.values()))' "$RUNAI_CP_VALUES")" \
-  "12 longhorn Exists True False" "control-plane values (no commas: they are helm --set values):"
+print(len(d), d["nats.persistence.storageClass"], d["thanos.receive.persistence.storageClass"], d["postgresql.enabled"],
+      d["global.postgresql.auth.host"], d["global.replicaCount"], d["thanos.receive.replicationFactor"],
+      d["thanos.receive.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator"],
+      d["thanos.query.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[1].values[0]"],
+      "key: node-role.kubernetes.io/runai-system" in d["keycloakx.affinity"], "podAntiAffinity" in d["keycloakx.affinity"],
+      any(k.startswith("postgresql.primary") for k in d), any("," in str(v) for v in d.values()))' "$RUNAI_CP_VALUES")" \
+  "41 longhorn local-path False oif-pg-rw.oif-db.svc.cluster.local 2 3 Exists query True True False False" \
+  "control-plane values, three control-plane nodes (no commas: they are helm --set values):"
 OIF_NODES="cp1=192.0.2.11:control gpu=192.0.2.21:worker"; runai_placement
-eq "$(python3 -c 'import json, sys; print(json.loads(sys.argv[1])["nats.persistence.storageClass"])' "$RUNAI_CP_VALUES")" local-path "one control-plane node, storage:"
+eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1]); print(len(d), d["nats.persistence.storageClass"], d["postgresql.primary.persistence.storageClass"], "global.replicaCount" in d, "podAntiAffinity" in d["keycloakx.affinity"])' "$RUNAI_CP_VALUES")" \
+  "12 local-path local-path False False" "one control-plane node: single copies, Run:ai's own database:"
 # the rendered installer config keeps both as one line each
 export RUNAI_VERSION RUNAI_CLUSTER_NAME=oif RUNAI_DOMAIN=runai.example.com RUNAI_TLS_CERT=/p/t RUNAI_TLS_KEY=/p/k RUNAI_CA_CERT=/p/c
 cfg=$(render "$ROOT/platform/runai/config.yaml")
@@ -36,7 +43,7 @@ eq "$(python3 -c 'import json, sys; print(sorted(k.split(".affinity")[0] for k i
   "['kai-resource-management.kai-scheduler.gpu-fractioning', 'karta']" "cluster subcharts pinned:"
 if python3 -c 'import yaml' 2>/dev/null; then   # where PyYAML is installed (Ubuntu hosts): the installer reads the same
   eq "$(python3 -c 'import sys, yaml; c = yaml.safe_load(sys.stdin); print(c["systemNodes"]["enabled"], len(c["controlPlane"]["customHelmValues"]), len(c["cluster"]["customHelmValues"]), c["controlPlane"]["domain"])' <<< "$cfg")" \
-    "True 12 4 runai.example.com" "config.yaml parsed as YAML:"
+    "True 12 4 runai.example.com" "config.yaml parsed as YAML (one control-plane node):"
 fi
 OIF_NODES=""
 

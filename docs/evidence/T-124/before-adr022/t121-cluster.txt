@@ -1,0 +1,19 @@
+T-121 cluster across 5 nodes (3 control plane)
+  PASS  every node Ready (5)
+  PASS  3 control-plane nodes
+  PASS  no node tainted against workloads (the platform runs on the control plane too)
+  PASS  one etcd member per control-plane node
+  PASS  one API server per control-plane node
+  PASS  no join tokens left
+  PASS  no uploaded control-plane certificates left
+  PASS  kubeconfig points at the API endpoint 192.168.120.10
+  PASS  API answers on the shared address 192.168.120.10
+  PASS  one kube-vip per control-plane node
+        (API address held by cp1)
+  PASS  a control-plane node holds the API address
+        (after taking kube-vip off cp1: address held by cp2 after 1 s)
+  PASS  another control-plane node takes the API address
+  PASS  API keeps answering on 192.168.120.10
+  PASS  kube-vip back on cp1
+
+T-121: PASS (14 checks)

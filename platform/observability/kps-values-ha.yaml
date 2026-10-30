@@ -1,0 +1,42 @@
+# Three control-plane nodes (ADR-022), on top of kps-values-multinode.yaml: every part users rely on runs in copies on
+# different nodes, so losing a node loses no dashboard. Prometheus runs two copies that each scrape everything and keep
+# their own data (local-path: the copies are the redundancy); Grafana runs two copies sharing the platform database;
+# Alertmanager runs three that form a cluster. The operator and kube-state-metrics stay single: a second
+# kube-state-metrics would double every series, and the operator only reconciles.
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    podAntiAffinity: hard
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+alertmanager:
+  alertmanagerSpec:
+    replicas: 3
+    podAntiAffinity: hard
+grafana:
+  replicas: 2
+  deploymentStrategy:
+    type: RollingUpdate
+  persistence:
+    enabled: false                      # its state is in the database
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+  grafana.ini:
+    database:
+      type: postgres
+      host: ${PG_HOST}:5432
+      name: grafana
+      user: grafana
+      ssl_mode: disable
+  envValueFrom:
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: ${GRAFANA_DB_SECRET}
+        key: password
