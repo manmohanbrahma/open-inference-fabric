@@ -25,7 +25,27 @@ stage_k8s_packages() {
   ok "kubeadm, kubelet, kubectl $KUBERNETES_VERSION (held); helm $(helm version --short | cut -d+ -f1)"
 }
 
-register_stage nodes nodes_rev   # multi-node: the node stages above on every other node (installer/lib/60-nodes.sh);
+register_stage conntrack-reaper
+stage_conntrack_reaper() {   # ADR-022: connections to a pod on a node that went down fail at once instead of hanging
+  command -v conntrack >/dev/null && command -v iptables-save >/dev/null || apt_install conntrack iptables
+  put_file /usr/local/sbin/oif-conntrack-reaper "$(cat "$K8S_TEMPLATES/conntrack-reaper.sh")
+" 755
+  put_file /etc/systemd/system/oif-conntrack-reaper.service "[Unit]
+Description=oif: drop connections to Kubernetes endpoints that are gone
+After=network-online.target
+[Service]
+ExecStart=/usr/local/sbin/oif-conntrack-reaper
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+"
+  systemctl daemon-reload; systemctl enable --now oif-conntrack-reaper >/dev/null 2>&1; rec "SERVICE oif-conntrack-reaper"
+  systemctl is-active -q oif-conntrack-reaper || die "oif-conntrack-reaper did not start (journalctl -u oif-conntrack-reaper)"
+  ok "conntrack reaper running: connections to endpoints that are gone are dropped within about 4 s"
+}
+
+register_stage nodes nodes_rev  # multi-node: the node stages above on every other node (installer/lib/60-nodes.sh);
                                  # reruns when the node stages change (each node still skips the ones it has done)
 
 register_stage kubernetes
@@ -40,7 +60,7 @@ stage_kubernetes() {
   if [ ! -f "$KCFG" ]; then
     rec "TEARDOWN kubernetes"
     API_ENDPOINT=$(api_endpoint)
-    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS API_ENDPOINT
+    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS NODE_MONITOR_GRACE NODE_LEASE_SECONDS API_ENDPOINT
     render "$K8S_TEMPLATES/kubeadm.yaml" > "$STATE/kubeadm.yaml" || die "cannot render the kubeadm configuration"
     # several control-plane nodes: kube-vip holds the API address; during init it needs super-admin.conf (ADR-017)
     [ -n "${OIF_API_VIP:-}" ] && kube_vip_manifest /etc/kubernetes/super-admin.conf "$HOST_IP"
@@ -235,6 +255,13 @@ stage_metallb() {
   export METALLB_RANGE
   local n=0; until render "$K8S_TEMPLATES/metallb-pool.yaml" | kc apply -f - >> "$LOG" 2>&1; do   # webhook needs a moment
     n=$((n + 1)); [ $n -ge 12 ] && die "MetalLB address pool rejected (kubectl -n metallb-system logs deploy/controller)"; sleep 10; done
+  if multi_node; then   # the platform's addresses answer from the platform nodes only: losing a GPU node never moves them
+    # kubeadm marks control-plane nodes to be left out of load balancers; in oif they are the platform nodes
+    kc label nodes -l "$SYSTEM_LABEL=true" node.kubernetes.io/exclude-from-external-load-balancers- >> "$LOG" 2>&1 \
+      || die "cannot let the platform nodes announce MetalLB addresses"
+    kc -n metallb-system patch l2advertisement oif --type merge \
+      -p "{\"spec\":{\"nodeSelectors\":[{\"matchLabels\":{\"$SYSTEM_LABEL\":\"true\"}}]}}" >> "$LOG" || die "cannot limit MetalLB to the platform nodes"
+  fi
   ok "MetalLB pool $METALLB_RANGE"
 }
 

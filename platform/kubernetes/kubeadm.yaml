@@ -23,8 +23,13 @@ apiServer:
 networking:
   podSubnet: ${POD_CIDR}
   serviceSubnet: ${SERVICE_CIDR}
+controllerManager:
+  extraArgs:
+    - name: node-monitor-grace-period   # ADR-022: a silent node is declared down sooner, so failover starts sooner
+      value: ${NODE_MONITOR_GRACE}
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
 maxPods: ${KUBELET_MAX_PODS}
+nodeLeaseDurationSeconds: ${NODE_LEASE_SECONDS}   # the lease is renewed every quarter of this; joining nodes get the same

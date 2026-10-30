@@ -25,7 +25,8 @@ for p in /etc/kubernetes /var/lib/kubelet /var/lib/etcd /etc/cni/net.d /var/lib/
   /etc/modules-load.d/90-oif-vfio.conf /etc/sysctl.d/90-oif.conf /etc/systemd/system/oif-resume.service \
   /usr/local/bin/helm /usr/local/nvidia /etc/cdi /var/run/cdi /opt/local-path-provisioner /opt/cni \
   /var/lib/amd-metrics-exporter /var/run/exporter /var/log/oif-install.log "$HOME/.kube/config" "$HOME/oif-ca.crt" \
-  /var/lib/longhorn /dev/longhorn /etc/modules-load.d/90-oif-longhorn.conf /etc/multipath/conf.d/90-oif-longhorn.conf \n  /.cache/helm /root/.cache/helm; do
+  /var/lib/longhorn /dev/longhorn /etc/modules-load.d/90-oif-longhorn.conf /etc/multipath/conf.d/90-oif-longhorn.conf \
+  /.cache/helm /root/.cache/helm /etc/systemd/system/oif-conntrack-reaper.service /usr/local/sbin/oif-conntrack-reaper; do
   [ -e "$p" ] && trace "$p"
 done
 sudo -n test -e /var/lib/oif 2>/dev/null && trace /var/lib/oif   # root-only; checked when sudo needs no password
@@ -34,7 +35,7 @@ grep -q 'disabled by oif' /etc/fstab && trace "/etc/fstab: swap line still comme
 [ "$left" = "$n" ] && clean "no oif files"
 
 echo "Services"; n=$left
-for u in kubelet containerd oif-install oif-resume; do
+for u in kubelet containerd oif-install oif-resume oif-conntrack-reaper; do
   s=$(systemctl is-enabled "$u" 2>/dev/null); a=$(systemctl is-active "$u" 2>/dev/null)
   case "$s$a" in *enabled*|active*) trace "service $u: $s, $a" ;; esac
 done
