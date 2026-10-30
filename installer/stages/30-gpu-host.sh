@@ -14,7 +14,14 @@ stage_nvidia_driver() {
   local br=$NVIDIA_DRIVER_BRANCH
   [ "${br%%-*}" -ge "$NVIDIA_DRIVER_MIN" ] || die "NVIDIA_DRIVER_BRANCH $br is older than $NVIDIA_DRIVER_MIN"
   log "installing the NVIDIA $br driver (headless, open kernel modules, prebuilt for kernel $(uname -r))"
-  apt_install "nvidia-headless-no-dkms-$br-open" "linux-modules-nvidia-$br-open-generic" "nvidia-utils-$br" "nvidia-compute-utils-$br"
+  # the modules built for the running kernel: the -generic package follows the newest kernel in the archive and would
+  # install that kernel too, which the node then boots and uninstall later removes from under it
+  local mods; mods="linux-modules-nvidia-$br-open-$(uname -r)"
+  if ! apt-cache show "$mods" >/dev/null 2>&1; then
+    mods="linux-modules-nvidia-$br-open-generic"
+    warn "no prebuilt NVIDIA modules for kernel $(uname -r): $mods brings the newest kernel too (uninstall keeps whichever kernel runs)"
+  fi
+  apt_install "nvidia-headless-no-dkms-$br-open" "$mods" "nvidia-utils-$br" "nvidia-compute-utils-$br"
   put_file /etc/modprobe.d/90-oif-nouveau.conf $'# oif: the NVIDIA driver replaces nouveau\nblacklist nouveau\noptions nouveau modeset=0\n'
   rec "INITRAMFS"; update-initramfs -u -k "$(uname -r)" >/dev/null
   ok "NVIDIA $br driver installed; it loads after the reboot"

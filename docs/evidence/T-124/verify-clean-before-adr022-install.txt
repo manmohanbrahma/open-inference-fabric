@@ -1,0 +1,35 @@
+=== 192.168.120.11
+  [info] module br_netfilter loaded (unloads at the next reboot)
+  [ok]   no Kubernetes services, network interfaces or swap changes
+  [info] firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0
+GPUs (driver per PCI address)
+
+1 oif trace(s) left.
+=== 192.168.120.12
+  [info] module br_netfilter loaded (unloads at the next reboot)
+  [ok]   no Kubernetes services, network interfaces or swap changes
+  [info] firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0
+GPUs (driver per PCI address)
+
+Host is clean: no oif traces.
+=== 192.168.120.13
+  [info] module br_netfilter loaded (unloads at the next reboot)
+  [ok]   no Kubernetes services, network interfaces or swap changes
+  [info] firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0
+GPUs (driver per PCI address)
+
+Host is clean: no oif traces.
+=== 192.168.120.21
+  [ok]   no Kubernetes services, network interfaces or swap changes
+  [info] firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0
+GPUs (driver per PCI address)
+  [ok]   0000:03:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Navi: amdgpu
+
+Host is clean: no oif traces.
+=== 192.168.120.22
+  [ok]   no Kubernetes services, network interfaces or swap changes
+  [info] firewall rules need root to read: sudo iptables-save | grep -cE 'KUBE-|cali-' should print 0
+GPUs (driver per PCI address)
+  [left] 0000:03:00.0 VGA compatible controller: NVIDIA Corporation GA102GL [RTX A6000] (rev: still on nvidia (the OS default is nouveau)
+
+1 oif trace(s) left.
