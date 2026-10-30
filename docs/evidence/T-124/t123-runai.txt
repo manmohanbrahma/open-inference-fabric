@@ -1,0 +1,34 @@
+T-123 Run:ai on several nodes: node pools per vendor
+  PASS  gpu-amd (gpu-amd) labelled oif.ai/gpu-vendor=amd
+  PASS  gpu-nvidia (gpu-nvidia) labelled oif.ai/gpu-vendor=nvidia
+  PASS  nodes without GPUs carry no vendor label
+        amd phase=Ready nodes=gpu-amd gpus 1
+        nvidia phase=Ready nodes=gpu-nvidia gpus 1
+        default phase=Ready nodes=cp1,cp2,cp3 gpus 0
+  PASS  Run:ai node pool nvidia Ready with 1 GPU(s)
+  PASS  Run:ai node pool amd Ready with 1 GPU(s)
+  PASS  patched cluster-sync image on this node
+  PASS  patched cluster-sync image on cp2
+  PASS  patched cluster-sync image on cp3
+  PASS  patched cluster-sync image on gpu-amd
+  PASS  patched cluster-sync image on gpu-nvidia
+  PASS  patched go-operator image on this node
+  PASS  patched go-operator image on cp2
+  PASS  patched go-operator image on cp3
+  PASS  patched go-operator image on gpu-amd
+  PASS  patched go-operator image on gpu-nvidia
+  PASS  patched frontend image on this node
+  PASS  patched frontend image on cp2
+  PASS  patched frontend image on cp3
+  PASS  patched frontend image on gpu-amd
+  PASS  patched frontend image on gpu-nvidia
+  PASS  Run:ai cluster-sync runs the patched image
+  PASS  Run:ai operator runs the patched image
+  PASS  no Run:ai pod waiting for an image (runai, runai-backend)
+  PASS  pod in pool nvidia runs on the NVIDIA node (gpu-nvidia)
+  PASS  pod in pool amd runs on the AMD node (gpu-amd)
+  PASS  a second pod in pool nvidia waits (quota 1 used)
+  PASS  an NVIDIA GPU asked for in pool amd is never placed
+        waiting reason: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-c-nvidia quota is 1 GPUs, while 1 GPUs 
+
+T-123: PASS (27 checks)

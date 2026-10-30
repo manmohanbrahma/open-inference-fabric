@@ -19,6 +19,8 @@ cluster:
   enabled: true
   version: "${RUNAI_VERSION}"
   name: ${RUNAI_CLUSTER_NAME}
+  # multi-node: the cluster chart's subcharts that take no global affinity, on the platform nodes ({} on a single node)
+  customHelmValues: ${RUNAI_CLUSTER_VALUES}
   workloadRouting: host
 prerequisites:
   gpuOperator:

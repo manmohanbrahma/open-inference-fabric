@@ -1,0 +1,333 @@
+ERROR: settings are missing: run 'sudo oif install' in a terminal
+  [ok] MetalLB range 192.168.120.240-192.168.120.244: no address answers ping
+  [ok] /srv/oif: 482 GB free
+  [ok] settings saved to /var/lib/oif/settings.conf
+  [ok] cluster SSH key created (/var/lib/oif/ssh/id_ed25519.pub)
+  [ok] cp2 (192.168.120.12): cluster key installed through your SSH agent
+  [ok] cp3 (192.168.120.13): cluster key installed through your SSH agent
+  [ok] gpu-amd (192.168.120.21): cluster key installed through your SSH agent
+  [ok] gpu-nvidia (192.168.120.22): cluster key installed through your SSH agent
+  [ok] admin key on the control-plane nodes (0 added; keys already there are left as they are)
+2026-10-30 04:19:32 == stage: preflight
+  [ok] Ubuntu 26.04
+  [ok] 24 CPU threads
+  [!] less than 64 GB memory
+  [ok] /var/lib: 482 GB free
+  [!] no NVIDIA GPU (Project 1.1 needs one)
+  [!] no supported AMD compute GPU (needed from Project 1.2)
+  [ok] DNS server 192.168.120.1 answers
+  [ok] reachable: https://registry.k8s.io
+  [ok] reachable: https://nvcr.io
+  [ok] reachable: https://ghcr.io
+  [ok] reachable: https://huggingface.co
+  [ok] reachable: https://archive.ubuntu.com
+  [ok] data folder /srv/oif
+2026-10-30 04:19:37 == stage: host-packages
+  [ok] base packages (4 recorded for uninstall)
+2026-10-30 04:19:45 == stage: kernel
+  [ok] kernel modules overlay, br_netfilter; IP forwarding and bridge filtering on
+2026-10-30 04:19:45 == stage: storage-host
+  [ok] Longhorn prerequisites: open-iscsi 2.1.11-3ubuntu3.1, iscsi_tcp loaded, Longhorn disks kept out of multipath
+2026-10-30 04:19:47 == stage: containerd
+  [ok] containerd running
+  [ok] containerd 2.2.2, data in /srv/oif/containerd
+2026-10-30 04:19:52 == stage: nvidia-driver
+  [!] no NVIDIA GPU: driver skipped
+2026-10-30 04:19:53 == stage: amd-firmware
+  [ok] no AMD compute GPU
+2026-10-30 04:19:53 == stage: gpu-isolation
+  [ok] no GPUs to isolate
+2026-10-30 04:19:53 == stage: reboot
+  [ok] no reboot needed
+2026-10-30 04:19:53 == stage: host-verify
+  [ok] swap off
+  [ok] containerd running
+2026-10-30 04:19:53 == stage: k8s-packages
+  [ok] kubeadm, kubelet, kubectl 1.35.9 (held); helm v3.22.1
+2026-10-30 04:20:03 == stage: nodes
+  [cp2] 2026-10-30 04:20:06 == stage: preflight
+  [cp2]   [ok] Ubuntu 26.04
+  [cp2]   [ok] 24 CPU threads
+  [cp2]   [!] less than 64 GB memory
+  [cp2]   [ok] /var/lib: 482 GB free
+  [cp2]   [!] no NVIDIA GPU (Project 1.1 needs one)
+  [cp2]   [!] no supported AMD compute GPU (needed from Project 1.2)
+  [cp2]   [ok] DNS server 192.168.120.1 answers
+  [cp2]   [ok] reachable: https://registry.k8s.io
+  [cp2]   [ok] reachable: https://nvcr.io
+  [cp2]   [ok] reachable: https://ghcr.io
+  [cp2]   [ok] reachable: https://huggingface.co
+  [cp2]   [ok] reachable: https://archive.ubuntu.com
+  [cp2]   [ok] data folder /srv/oif
+  [cp2] 2026-10-30 04:20:09 == stage: host-packages
+  [cp2] 2026-10-30 04:20:14 == stage: kernel
+  [cp2] 2026-10-30 04:20:14 == stage: storage-host
+  [cp2]   [ok] Longhorn prerequisites: open-iscsi 2.1.11-3ubuntu3.1, iscsi_tcp loaded, Longhorn disks kept out of multipath
+  [cp2] 2026-10-30 04:20:17 == stage: containerd
+  [cp2] 2026-10-30 04:20:22 == stage: nvidia-driver
+  [cp2]   [!] no NVIDIA GPU: driver skipped
+  [cp2] 2026-10-30 04:20:22 == stage: amd-firmware
+  [cp2]   [ok] no AMD compute GPU
+  [cp2] 2026-10-30 04:20:22 == stage: gpu-isolation
+  [cp2]   [ok] no GPUs to isolate
+  [cp2] 2026-10-30 04:20:22 == stage: reboot
+  [cp2]   [ok] no reboot needed
+  [cp2] 2026-10-30 04:20:22 == stage: host-verify
+  [cp2]   [ok] swap off
+  [cp2] 2026-10-30 04:20:22 == stage: k8s-packages
+  [cp2]   [ok] kubeadm, kubelet, kubectl 1.35.9 (held); helm v3.22.1
+  [ok] cp2: node stages done
+  [cp3] 2026-10-30 04:20:35 == stage: preflight
+  [cp3]   [ok] Ubuntu 26.04
+  [cp3]   [ok] 24 CPU threads
+  [cp3]   [!] less than 64 GB memory
+  [cp3]   [ok] /var/lib: 482 GB free
+  [cp3]   [!] no NVIDIA GPU (Project 1.1 needs one)
+  [cp3]   [!] no supported AMD compute GPU (needed from Project 1.2)
+  [cp3]   [ok] DNS server 192.168.120.1 answers
+  [cp3]   [ok] reachable: https://registry.k8s.io
+  [cp3]   [ok] reachable: https://nvcr.io
+  [cp3]   [ok] reachable: https://ghcr.io
+  [cp3]   [ok] reachable: https://huggingface.co
+  [cp3]   [ok] reachable: https://archive.ubuntu.com
+  [cp3]   [ok] data folder /srv/oif
+  [cp3] 2026-10-30 04:20:37 == stage: host-packages
+  [cp3] 2026-10-30 04:20:43 == stage: kernel
+  [cp3] 2026-10-30 04:20:43 == stage: storage-host
+  [cp3]   [ok] Longhorn prerequisites: open-iscsi 2.1.11-3ubuntu3.1, iscsi_tcp loaded, Longhorn disks kept out of multipath
+  [cp3] 2026-10-30 04:20:45 == stage: containerd
+  [cp3] 2026-10-30 04:20:51 == stage: nvidia-driver
+  [cp3]   [!] no NVIDIA GPU: driver skipped
+  [cp3] 2026-10-30 04:20:51 == stage: amd-firmware
+  [cp3]   [ok] no AMD compute GPU
+  [cp3] 2026-10-30 04:20:51 == stage: gpu-isolation
+  [cp3]   [ok] no GPUs to isolate
+  [cp3] 2026-10-30 04:20:51 == stage: reboot
+  [cp3]   [ok] no reboot needed
+  [cp3] 2026-10-30 04:20:51 == stage: host-verify
+  [cp3]   [ok] swap off
+  [cp3] 2026-10-30 04:20:51 == stage: k8s-packages
+  [cp3]   [ok] kubeadm, kubelet, kubectl 1.35.9 (held); helm v3.22.1
+  [ok] cp3: node stages done
+  [gpu-amd] 2026-10-30 04:21:02 == stage: preflight
+  [gpu-amd]   [ok] Ubuntu 26.04
+  [gpu-amd]   [ok] 48 CPU threads
+  [gpu-amd]   [ok] memory
+  [gpu-amd]   [ok] /var/lib: 773 GB free
+  [gpu-amd]   [!] no NVIDIA GPU (Project 1.1 needs one)
+  [gpu-amd]   [ok] 1 AMD compute GPU(s)
+  [gpu-amd]   [ok] DNS server 192.168.120.1 answers
+  [gpu-amd]   [ok] reachable: https://registry.k8s.io
+  [gpu-amd]   [ok] reachable: https://nvcr.io
+  [gpu-amd]   [ok] reachable: https://ghcr.io
+  [gpu-amd]   [ok] reachable: https://huggingface.co
+  [gpu-amd]   [ok] reachable: https://archive.ubuntu.com
+  [gpu-amd]   [ok] data folder /srv/oif
+  [gpu-amd] 2026-10-30 04:21:05 == stage: host-packages
+  [gpu-amd] 2026-10-30 04:21:17 == stage: kernel
+  [gpu-amd] 2026-10-30 04:21:18 == stage: storage-host
+  [gpu-amd]   [ok] no platform volumes on this node
+  [gpu-amd] 2026-10-30 04:21:18 == stage: containerd
+  [gpu-amd] 2026-10-30 04:21:24 == stage: nvidia-driver
+  [gpu-amd]   [!] no NVIDIA GPU: driver skipped
+  [gpu-amd] 2026-10-30 04:21:24 == stage: amd-firmware
+  [gpu-amd]   [ok] AMD GPU firmware installed
+  [gpu-amd]   [ok] AMD GPU started by amdgpu
+  [gpu-amd] 2026-10-30 04:21:53 == stage: gpu-isolation
+  [gpu-amd]   [ok] no GPUs to isolate
+  [gpu-amd] 2026-10-30 04:21:53 == stage: reboot
+  [gpu-amd]   [ok] no reboot needed
+  [gpu-amd] 2026-10-30 04:21:53 == stage: host-verify
+  [gpu-amd]   [ok] AMD GPU 0000:03:00.0 on amdgpu, /dev/kfd present
+  [gpu-amd]   [ok] swap off
+  [gpu-amd] 2026-10-30 04:21:53 == stage: k8s-packages
+  [gpu-amd]   [ok] kubeadm, kubelet, kubectl 1.35.9 (held); helm v3.22.1
+  [ok] gpu-amd: node stages done
+  [gpu-nvidia] 2026-10-30 04:22:05 == stage: preflight
+  [gpu-nvidia]   [ok] Ubuntu 26.04
+  [gpu-nvidia]   [ok] 48 CPU threads
+  [gpu-nvidia]   [ok] memory
+  [gpu-nvidia]   [ok] /var/lib: 773 GB free
+  [gpu-nvidia]   [ok] 1 NVIDIA GPU(s)
+  [gpu-nvidia]   [!] no supported AMD compute GPU (needed from Project 1.2)
+  [gpu-nvidia]   [!] 0000:03:00.0 on nouveau: oif install replaces it with the NVIDIA driver (one reboot, asked first)
+  [gpu-nvidia]   [ok] DNS server 192.168.120.1 answers
+  [gpu-nvidia]   [ok] reachable: https://registry.k8s.io
+  [gpu-nvidia]   [ok] reachable: https://nvcr.io
+  [gpu-nvidia]   [ok] reachable: https://ghcr.io
+  [gpu-nvidia]   [ok] reachable: https://huggingface.co
+  [gpu-nvidia]   [ok] reachable: https://archive.ubuntu.com
+  [gpu-nvidia]   [ok] data folder /srv/oif
+  [gpu-nvidia] 2026-10-30 04:22:08 == stage: host-packages
+  [gpu-nvidia] 2026-10-30 04:22:21 == stage: kernel
+  [gpu-nvidia] 2026-10-30 04:22:21 == stage: storage-host
+  [gpu-nvidia]   [ok] no platform volumes on this node
+  [gpu-nvidia] 2026-10-30 04:22:21 == stage: containerd
+  [gpu-nvidia] 2026-10-30 04:22:27 == stage: nvidia-driver
+  [gpu-nvidia]   [ok] NVIDIA 595-server driver installed; it loads after the reboot
+  [gpu-nvidia] 2026-10-30 04:24:43 == stage: amd-firmware
+  [gpu-nvidia]   [ok] no AMD compute GPU
+  [gpu-nvidia] 2026-10-30 04:24:43 == stage: gpu-isolation
+  [gpu-nvidia]   [ok] no GPUs to isolate
+  [gpu-nvidia] 2026-10-30 04:24:43 == stage: reboot
+  [gpu-nvidia]   [!] a reboot is needed to load the NVIDIA driver instead of nouveau
+  [ok] gpu-nvidia back after the reboot
+  [gpu-nvidia] 2026-10-30 04:25:12 == stage: reboot
+  [gpu-nvidia]   [ok] no reboot needed
+  [gpu-nvidia] 2026-10-30 04:25:13 == stage: host-verify
+  [gpu-nvidia]   [ok] NVIDIA driver 595.91.07: NVIDIA RTX A6000
+  [gpu-nvidia]   [ok] swap off
+  [gpu-nvidia] 2026-10-30 04:25:13 == stage: k8s-packages
+  [gpu-nvidia]   [ok] kubeadm, kubelet, kubectl 1.35.9 (held); helm v3.22.1
+  [ok] gpu-nvidia: node stages done
+2026-10-30 04:25:24 == stage: kubernetes
+ERROR: no free pod network range
+  [ok] cp2 (192.168.120.12, control): reachable with the cluster key
+  [ok] cp3 (192.168.120.13, control): reachable with the cluster key
+  [ok] gpu-amd (192.168.120.21, worker): reachable with the cluster key
+  [ok] gpu-nvidia (192.168.120.22, worker): reachable with the cluster key
+  [ok] admin key on the control-plane nodes (0 added; keys already there are left as they are)
+2026-10-30 04:28:29 == stage: kubernetes
+  [ok] pod network 10.244.0.0/16, services 172.30.0.0/16 (no overlap with this host's networks)
+  [ok] kube-vip holds the API address 192.168.120.10
+  [ok] API server answering
+  [ok] Kubernetes 1.35.9 control plane on 192.168.120.10:6443; kubectl works for oif
+2026-10-30 04:29:41 == stage: k8s-join
+  [cp2] ERROR: kubeadm join failed (sudo less /var/lib/oif/kubeadm-join.log; journalctl -u kubelet)
+ERROR: cp2 could not join (on the node: sudo tail -50 /var/log/oif-install.log)
+  [ok] cp2 (192.168.120.12, control): reachable with the cluster key
+  [ok] cp3 (192.168.120.13, control): reachable with the cluster key
+  [ok] gpu-amd (192.168.120.21, worker): reachable with the cluster key
+  [ok] gpu-nvidia (192.168.120.22, worker): reachable with the cluster key
+  [ok] admin key on the control-plane nodes (0 added; keys already there are left as they are)
+2026-10-30 04:36:59 == stage: k8s-join
+  [cp2]   [ok] joined the cluster at 192.168.120.10:6443 as control
+  [ok] cp2 (cp2) registered
+  [cp3]   [ok] joined the cluster at 192.168.120.10:6443 as control
+  [ok] cp3 (cp3) registered
+  [gpu-amd]   [ok] joined the cluster at 192.168.120.10:6443 as worker
+  [ok] gpu-amd (gpu-amd) registered
+  [gpu-nvidia]   [ok] joined the cluster at 192.168.120.10:6443 as worker
+  [ok] gpu-nvidia (gpu-nvidia) registered
+2026-10-30 04:38:54 == stage: k8s-tokens
+  [ok] no join tokens or uploaded certificates left (all nodes joined)
+2026-10-30 04:38:55 == stage: calico
+  [ok] Calico running
+  [ok] all 5 node(s) Ready
+2026-10-30 04:45:45 == stage: system-nodes
+  [ok] platform nodes (node-role.kubernetes.io/runai-system): cp1 cp2 cp3; GPU nodes run workloads only
+2026-10-30 04:45:46 == stage: storage
+  [ok] default StorageClass local-path, volumes in /srv/oif/volumes
+2026-10-30 04:46:17 == stage: longhorn
+  [ok] 3 Longhorn node(s) ready
+  [!] test pod writes to a Longhorn volume: not reached within 5 min
+ERROR: test pod on a Longhorn volume not running (kubectl -n oif-longhorn-test describe pod writer)
+  [ok] cp2 (192.168.120.12, control): reachable with the cluster key
+  [ok] cp3 (192.168.120.13, control): reachable with the cluster key
+  [ok] gpu-amd (192.168.120.21, worker): reachable with the cluster key
+  [ok] gpu-nvidia (192.168.120.22, worker): reachable with the cluster key
+  [ok] admin key on the control-plane nodes (0 added; keys already there are left as they are)
+2026-10-30 04:59:50 == stage: longhorn
+  [ok] 3 Longhorn node(s) ready
+  [ok] Longhorn CSI driver ready
+  [ok] test pod writes to a Longhorn volume
+  [ok] test volume healthy (3 copies)
+  [ok] Longhorn 1.12.1: StorageClass longhorn, 3 copies of each volume on the control-plane nodes, data in /srv/oif/longhorn
+2026-10-30 05:00:59 == stage: metallb
+  [ok] MetalLB pool 192.168.120.240-192.168.120.244
+2026-10-30 05:05:06 == stage: k8s-verify
+  [ok] all system pods running
+  [ok] test volume bound
+  [ok] test pod running
+  [ok] LoadBalancer address
+  [ok] http://192.168.120.240 answers
+  [ok] Kubernetes ready: 5 node(s) Ready: cp1 cp2 cp3 gpu-amd gpu-nvidia, storage and load balancer tested (192.168.120.240)
+2026-10-30 05:06:06 == stage: gpu-operator
+  [ok] GPU Operator ready (ClusterPolicy)
+2026-10-30 05:10:41 == stage: gpu-verify
+  [ok] nvidia.com/gpu advertised (1 in the cluster)
+  [ok] node advertises nvidia.com/gpu: 1 (NVIDIA-RTX-A6000)
+  [ok] CUDA test pod finished
+  [ok] DCGM metrics
+  [ok] pod saw the GPU, CUDA test passed; DCGM: fb_used=0 gpu_temp=38 power_usage=34.142 
+2026-10-30 05:11:23 == stage: prometheus
+  [ok] Prometheus, Grafana and Alertmanager running (namespace monitoring)
+2026-10-30 05:14:53 == stage: amd-gpu-operator
+  [ok] metrics exporter: UMC ECC health threshold raised for the Radeon PRO workstation GPU on kernel 7.0.0-38-generic
+  [ok] AMD GPU node labelled by Node Feature Discovery
+  [ok] AMD device plugin running
+  [ok] AMD GPU Operator pods running
+2026-10-30 05:17:14 == stage: amd-gpu-verify
+  [ok] amd.com/gpu advertised (1 in the cluster)
+  [ok] node advertises amd.com/gpu: 1 (gpu.device-id=7448, gpu.family=GC_11_0_0, gpu.product-name=AMD_Radeon_Pro_W7900, gpu.vram=45G)
+  [ok] AMD test pod finished
+  [ok] AMD GPU metrics
+  [ok] pod got the AMD GPU; metrics: gpu_edge_temperature=31 gpu_health=1 gpu_junction_temperature=36 gpu_total_vram=46064 gpu_used_vram=26 
+2026-10-30 05:17:30 == stage: ingress
+  [ok] HAProxy ingress (class haproxy) on 192.168.120.240
+2026-10-30 05:18:42 == stage: pki
+  [ok] certificate for runai.192-168-120-240.sslip.io and *.runai.192-168-120-240.sslip.io (CA for browsers: /home/oif/oif-ca.crt)
+2026-10-30 05:18:43 == stage: runai-dns
+  [ok] cluster DNS forwards to: 192.168.120.1
+  [ok] cluster DNS: runai.192-168-120-240.sslip.io and *.runai.192-168-120-240.sslip.io -> 192.168.120.240
+2026-10-30 05:19:04 == stage: runai
+  [ok] Run:ai 3.0.20 installed
+2026-10-30 05:33:09 == stage: runai-fractions
+  [ok] GPU fractioning daemons removed
+  [!] GPU fractions off: driver 595.91.07 is older than r615 (whole GPUs, quotas and projects work)
+2026-10-30 05:33:51 == stage: runai-verify
+  [ok] Run:ai pods running in runai-backend
+  [ok] Run:ai pods running in runai
+  [ok] Run:ai UI answers on https://runai.192-168-120-240.sslip.io (HTTP 200, certificate trusted by the oif CA)
+2026-10-30 05:35:22 == stage: runai-pools
+  [ok] GPU nodes labelled oif.ai/gpu-vendor: gpu-amd=amd gpu-nvidia=nvidia 
+  [ok] Run:ai counts each vendor's GPUs in its pool
+2026-10-30 05:36:23 == stage: runai-admin
+  [ok] log in to Run:ai as admin@lab.internal with the password from the settings
+2026-10-30 05:36:24 == stage: runai-patches
+  [ok] run-ai-3.0.20.tgz downloaded and verified
+  [ok] crane-v0.22.1.tgz downloaded and verified
+  [ok] cluster-sync build finished
+  [ok] patched image oif.local/runai-oss/cluster-sync:3.0.20-oif1 loaded into containerd
+  [ok] patched image oif.local/runai-oss/cluster-sync:3.0.20-oif1 on every node (4 loaded now)
+  [ok] Run:ai cluster-sync runs the patched image
+  [ok] go-operator build finished
+  [ok] patched image oif.local/runai-oss/go-operator:3.0.20-oif1 loaded into containerd
+  [ok] patched image oif.local/runai-oss/go-operator:3.0.20-oif1 on every node (4 loaded now)
+  [ok] Run:ai go-operator runs the patched image
+  [ok] frontend build finished
+  [ok] patched image oif.local/runai-oss/frontend:3.0.20-oif1 loaded into containerd
+  [ok] patched image oif.local/runai-oss/frontend:3.0.20-oif1 on every node (4 loaded now)
+  [ok] Run:ai frontend runs the patched image
+  [ok] Run:ai counts every GPU of the node
+2026-10-30 05:47:03 == stage: runai-quota
+  [ok] projects team-a (1 GPU, namespace runai-team-a) and team-b (0 GPU, namespace runai-team-b)
+  [ok] team-b (quota 0) waits while the GPU is free: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-b-nvidia quota is 0 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota..
+  [ok] team-a (quota 1) gets the GPU
+  [ok] team-a runs on GPU 0: NVIDIA RTX A6000 ; team-b still waits
+  [ok] quota test passed; test pods removed (projects team-a and team-b kept)
+2026-10-30 05:48:20 == stage: amd-quota
+  [ok] team-b (quota 0) waits while the AMD GPU is free: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-b-amd quota is 0 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota..
+  [ok] team-a (quota 1) gets the AMD GPU
+  [ok] team-a runs with /dev/kfd  /dev/dri: card0 renderD128 ; team-b still Pending
+  [ok] S-2 passed: Run:ai enforces quotas on amd.com/gpu
+2026-10-30 05:49:29 == stage: runai-amd-templates
+  [ok] template jupyter-lab-rocm-1-gpu created
+  [ok] template pytorch-rocm-1-gpu created
+2026-10-30 05:49:36 == stage: vendor-quota
+  [ok] project team-c (namespace runai-team-c): Run:ai quota 1 GPU in node pool nvidia and 1 in node pool amd
+  [ok] team-c runs one GPU in each vendor's pool
+  [ok] team-c runs GPU 0: NVIDIA RTX A6000 on gpu-nvidia and the AMD GPU on gpu-amd
+  [ok] a second NVIDIA pod waits in the queue: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-c-nvidia quota is 1 GPUs, while 1 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota..
+  [ok] T-123: per-vendor quotas through Run:ai node pools (project team-c kept)
+2026-10-30 05:50:36 == stage: observability
+  [ok] recording rules oif:gpu_*, oif:node_*, oif:project_* loaded into Prometheus
+  [ok] dashboards OIF Fleet and OIF Scheduling handed to Grafana
+  [ok] Grafana ingress for https://grafana.runai.192-168-120-240.sslip.io
+2026-10-30 05:50:37 == stage: observability-verify
+  [ok] GPU vendors recorded (oif:gpu_allocatable)
+  [ok] every oif:gpu_* series covers: amd nvidia
+  [ok] Grafana dashboard oif-fleet
+  [ok] Grafana dashboard oif-scheduling
+  [ok] Grafana answers on https://grafana.runai.192-168-120-240.sslip.io (CA: /home/oif/oif-ca.crt) with dashboards OIF Fleet and OIF Scheduling (user admin)
+2026-10-30 05:52:00 == install finished

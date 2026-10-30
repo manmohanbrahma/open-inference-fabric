@@ -107,8 +107,20 @@ stage_runai() {
 
 runai_placement() {   # installer settings that keep Run:ai on the platform nodes (multi-node), each as one line of JSON
   export RUNAI_SYSTEM_NODES RUNAI_CP_VALUES
-  if ! multi_node; then RUNAI_SYSTEM_NODES='{"enabled": false}'; RUNAI_CP_VALUES='{}'; return 0; fi
-  RUNAI_SYSTEM_NODES="{\"enabled\": true, \"mode\": \"required\", \"label\": \"$SYSTEM_LABEL\", \"manageLabels\": false}"
+  export RUNAI_CLUSTER_VALUES
+  if ! multi_node; then RUNAI_SYSTEM_NODES='{"enabled": false}'; RUNAI_CP_VALUES='{}'; RUNAI_CLUSTER_VALUES='{}'; return 0; fi
+  # the cluster chart's subcharts karta and gpu-fractioning (its controller, not the per-GPU daemons) take no global
+  # affinity either (seen on the lab: both on a GPU node)
+  RUNAI_CLUSTER_VALUES=$(LABEL=$SYSTEM_LABEL python3 -c '
+import json, os
+req = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0]"
+v = {}
+for p in ("karta", "kai-resource-management.kai-scheduler.gpu-fractioning"):
+    v[f"{p}.{req}.key"] = os.environ["LABEL"]
+    v[f"{p}.{req}.operator"] = "Exists"
+print(json.dumps(v))')
+  # the selector only names the nodes for the installer's preflight check (oif labels them, stage system-nodes)
+  RUNAI_SYSTEM_NODES="{\"enabled\": true, \"mode\": \"required\", \"label\": \"$SYSTEM_LABEL\", \"manageLabels\": false, \"selector\": {\"$SYSTEM_LABEL\": \"true\"}}"
   # Helm --set values. The chart copies these subcharts' affinity from a YAML anchor, so the installer's global
   # affinity does not reach them; their volumes go on the platform's StorageClass.
   RUNAI_CP_VALUES=$(LABEL=$SYSTEM_LABEL SC=$(platform_sc) python3 -c '

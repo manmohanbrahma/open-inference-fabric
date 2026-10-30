@@ -101,7 +101,13 @@ for p in (json.loads(text).get("items") or [] if text else []):
       ok "workload pods stopped and removed ($(wc -w <<< "$ids"))"
     fi
   fi
+  # kube-vip added the API address to this node's interface; stopped, it leaves it there, and a node that keeps it
+  # answers its own joins to that address with "connection refused" on the next install
+  local vip=""; [ -f /etc/kubernetes/manifests/kube-vip.yaml ] \
+    && vip=$(sed -n 's/.*{name: address, value: "\([0-9.]*\)"}.*/\1/p' /etc/kubernetes/manifests/kube-vip.yaml)
   kubeadm reset -f --cri-socket unix:///run/containerd/containerd.sock >> "$LOG" 2>&1 || true
+  if [ -n "$vip" ]; then local d; for d in $(ip -o -4 addr show | awk -v a="$vip/32" '$4 == a {print $2}'); do
+    ip addr del "$vip/32" dev "$d" >/dev/null 2>&1 || true; done; fi
   systemctl disable --now kubelet >/dev/null 2>&1 || true
   local t   # no mount left is fine: grep's "no match" must not fail the pipeline
   findmnt -rn -o TARGET | { grep -E '^/(var/lib/kubelet|run/netns|run/calico|var/lib/calico)(/|$)' || true; } | sort -r \
@@ -179,6 +185,10 @@ stage_longhorn() {   # three or more control-plane nodes: the platform's data on
     || die "Longhorn failed (kubectl -n longhorn-system get pods)"
   wait_for "$(control_count) Longhorn node(s) ready" 600 10 longhorn_nodes_ready \
     || die "Longhorn nodes not ready (kubectl -n longhorn-system get nodes.longhorn.io)"
+  # helm returns before Longhorn's driver deployer has made the CSI driver; its sidecars restart until the plugin on
+  # their node answers (6-8 min on the reference run)
+  wait_for "Longhorn CSI driver ready" 900 10 longhorn_csi_ready \
+    || die "Longhorn CSI driver not ready (kubectl -n longhorn-system get pods | grep csi)"
   # a test volume: bound, written by a pod, every replica healthy
   export BUSYBOX_IMAGE; render "$OIF_HOME/platform/storage/longhorn-test.yaml" | kc apply -f - >> "$LOG" || die "Longhorn test could not be created"
   wait_for "test pod writes to a Longhorn volume" 300 5 pod_running oif-longhorn-test writer \
@@ -193,6 +203,15 @@ longhorn_nodes_ready() {   # every control-plane node is a ready, schedulable Lo
   [ "$(kc -n longhorn-system get nodes.longhorn.io -o json | python3 -c 'import json, sys
 ok = lambda n, t: any(c["type"] == t and c["status"] == "True" for c in n.get("status", {}).get("conditions", []))
 print(sum(ok(n, "Ready") and ok(n, "Schedulable") for n in json.load(sys.stdin)["items"]))')" = "$(control_count)" ]; }
+longhorn_csi_ready() {   # the CSI plugin on every Longhorn node, and every CSI sidecar deployment, fully ready
+  kc -n longhorn-system get ds/longhorn-csi-plugin deploy/csi-attacher deploy/csi-provisioner deploy/csi-resizer deploy/csi-snapshotter -o json 2>/dev/null \
+    | python3 -c 'import json, sys
+items = json.load(sys.stdin)["items"]
+def ready(o):
+    s = o.get("status", {})
+    if o["kind"] == "DaemonSet": return s.get("desiredNumberScheduled", 0) > 0 and s.get("numberReady") == s["desiredNumberScheduled"]
+    return s.get("readyReplicas", 0) == o["spec"].get("replicas", 1)
+sys.exit(0 if len(items) == 5 and all(ready(o) for o in items) else 1)'; }
 longhorn_volume_is() { [ "$(kc -n longhorn-system get volumes.longhorn.io "$1" -o jsonpath='{.status.robustness}')" = "$2" ]; }   # pv robustness
 pod_running() { [ "$(kc -n "$1" get pod "$2" -o jsonpath='{.status.phase}' 2>/dev/null)" = Running ]; }   # namespace pod
 

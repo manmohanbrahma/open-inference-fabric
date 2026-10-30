@@ -44,6 +44,8 @@ swapon --show=NAME --noheadings | grep -q . && clean "swap on: $(swapon --show=N
 for m in br_netfilter vfio_pci; do lsmod | grep -q "^$m " && info "module $m loaded (unloads at the next reboot)"; done
 ifs=$(ip -o link show | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(cali|vxlan\.calico|tunl0|kube-ipvs0|cni0|flannel)')
 [ -n "$ifs" ] && trace "$(wc -l <<< "$ifs") Kubernetes network interfaces ($(head -3 <<< "$ifs" | xargs) ...)"
+va=$(ip -o -4 addr show | awk '$2 != "lo" && $4 ~ /\/32$/ {print $4 " on " $2}')
+[ -n "$va" ] && trace "address left by kube-vip (the cluster's API address): $(xargs <<< "$va")"
 rt=$(ip -4 route show proto 80 2>/dev/null)
 [ -n "$rt" ] && trace "$(wc -l <<< "$rt") Calico route(s) left ($(head -1 <<< "$rt"))"
 ses=(/sys/class/iscsi_session/*); [ -e "${ses[0]}" ] && trace "${#ses[@]} iSCSI session(s) still open (Longhorn volumes): ${ses[*]##*/}"

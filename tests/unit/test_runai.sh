@@ -16,10 +16,10 @@ ok_ v_domain runai.example.com; ok_ v_domain ""; no_ v_domain "not a domain"; no
 # Run:ai placement (ADR-021): nothing on a single node; on several, required system-node affinity and platform storage
 host_prefix() { [ "$1" = 192.0.2.11 ] && echo 192.0.2.11/24; }
 OIF_NODES=""; runai_placement
-eq "$RUNAI_SYSTEM_NODES" '{"enabled": false}' "single node, system nodes:"; eq "$RUNAI_CP_VALUES" '{}' "single node, values:"
+eq "$RUNAI_SYSTEM_NODES" '{"enabled": false}' "single node, system nodes:"; eq "$RUNAI_CP_VALUES" '{}' "single node, values:"; eq "$RUNAI_CLUSTER_VALUES" '{}' "single node, cluster values:"
 OIF_NODES="cp1=192.0.2.11:control cp2=192.0.2.12:control cp3=192.0.2.13:control gpu=192.0.2.21:worker"; runai_placement
-eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1]); print(d["enabled"], d["mode"], d["label"], d["manageLabels"])' "$RUNAI_SYSTEM_NODES")" \
-  "True required node-role.kubernetes.io/runai-system False" "system nodes:"
+eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1]); print(d["enabled"], d["mode"], d["label"], d["manageLabels"], d["selector"])' "$RUNAI_SYSTEM_NODES")" \
+  "True required node-role.kubernetes.io/runai-system False {'node-role.kubernetes.io/runai-system': 'true'}" "system nodes:"
 eq "$(python3 -c 'import json, sys; d = json.loads(sys.argv[1])
 print(len(d), d["postgresql.primary.persistence.storageClass"], d["thanos.receive.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator"],
       "key: node-role.kubernetes.io/runai-system" in d["keycloakx.affinity"], any("," in v for v in d.values()))' "$RUNAI_CP_VALUES")" \
@@ -31,9 +31,12 @@ export RUNAI_VERSION RUNAI_CLUSTER_NAME=oif RUNAI_DOMAIN=runai.example.com RUNAI
 cfg=$(render "$ROOT/platform/runai/config.yaml")
 grep -qxF "  customHelmValues: $RUNAI_CP_VALUES" <<< "$cfg" || fail "customHelmValues not under controlPlane"
 grep -qxF "systemNodes: $RUNAI_SYSTEM_NODES" <<< "$cfg" || fail "systemNodes not at the top level"
+grep -qxF "  customHelmValues: $RUNAI_CLUSTER_VALUES" <<< "$cfg" || fail "cluster customHelmValues missing"
+eq "$(python3 -c 'import json, sys; print(sorted(k.split(".affinity")[0] for k in json.loads(sys.argv[1]) if k.endswith(".key")))' "$RUNAI_CLUSTER_VALUES")" \
+  "['kai-resource-management.kai-scheduler.gpu-fractioning', 'karta']" "cluster subcharts pinned:"
 if python3 -c 'import yaml' 2>/dev/null; then   # where PyYAML is installed (Ubuntu hosts): the installer reads the same
-  eq "$(python3 -c 'import sys, yaml; c = yaml.safe_load(sys.stdin); print(c["systemNodes"]["enabled"], len(c["controlPlane"]["customHelmValues"]), c["controlPlane"]["domain"])' <<< "$cfg")" \
-    "True 12 runai.example.com" "config.yaml parsed as YAML:"
+  eq "$(python3 -c 'import sys, yaml; c = yaml.safe_load(sys.stdin); print(c["systemNodes"]["enabled"], len(c["controlPlane"]["customHelmValues"]), len(c["cluster"]["customHelmValues"]), c["controlPlane"]["domain"])' <<< "$cfg")" \
+    "True 12 4 runai.example.com" "config.yaml parsed as YAML:"
 fi
 OIF_NODES=""
 
