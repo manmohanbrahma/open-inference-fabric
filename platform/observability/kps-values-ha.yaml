@@ -2,7 +2,14 @@
 # different nodes, so losing a node loses no dashboard. Prometheus runs two copies that each scrape everything and keep
 # their own data (local-path: the copies are the redundancy); Grafana runs two copies sharing the platform database;
 # Alertmanager runs three that form a cluster. The operator and kube-state-metrics stay single: a second
-# kube-state-metrics would double every series, and the operator only reconciles.
+# kube-state-metrics would double every series, and the operator only reconciles. Both leave a node that went down after
+# 20 s instead of Kubernetes' 300 s, so the GPU panels have data again about a minute after the node is declared down.
+prometheusOperator:
+  tolerations: &fast-move
+    - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+    - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 20}
+kube-state-metrics:
+  tolerations: *fast-move
 prometheus:
   prometheusSpec:
     replicas: 2

@@ -59,13 +59,19 @@ grafana_ok() {   # dashboards oif-fleet and oif-scheduling answer through the in
     curl -fsS -m 10 --cacert "$PKI/ca.crt" -u "$u:$pw" -o /dev/null "https://grafana.$RUNAI_DOMAIN/api/dashboards/uid/$d" || return 1; done; }
 
 HA_MAX=${HA_MAX:-90}   # seconds users may lose the UI or the dashboards (ADR-022): detection of the dead node, then failover
-serving() {   # every platform Deployment and StatefulSet has at least one ready copy (the node that is off holds the rest)
+# single by design (ADR-022): operators and controllers no user talks to; they move after Kubernetes' eviction (300 s)
+SINGLE="runai/runai-operator runai/kai-operator runai/krm-operator runai/karta-operator runai/runai-cluster-gpu-fractioning
+  runai/anyworkload-controller runai/application-controller metallb-system/controller monitoring/kps-kube-prometheus-stack-operator
+  monitoring/kps-kube-state-metrics longhorn-system/longhorn-driver-deployer"
+serving() {   # $1 copies: every replicated platform service has a ready copy; singles: every single-copy one is ready again
   kc get deploy,statefulset -A -o json | python3 -c '
 import json, sys
-ns = set(sys.argv[1].split())
-bad = [o["metadata"]["namespace"] + "/" + o["metadata"]["name"] for o in json.load(sys.stdin)["items"]
-       if o["metadata"]["namespace"] in ns and o["spec"].get("replicas", 1) and not o.get("status", {}).get("readyReplicas")]
-print(" ".join(bad)); sys.exit(1 if bad else 0)' "$PLATFORM_NS"; }
+ns, single, mode = set(sys.argv[1].split()), set(sys.argv[2].split()), sys.argv[3]
+bad = [k for o in json.load(sys.stdin)["items"]
+       for k in [o["metadata"]["namespace"] + "/" + o["metadata"]["name"]]
+       if o["metadata"]["namespace"] in ns and (k in single) == (mode == "singles")
+       and o["spec"].get("replicas", 1) and not o.get("status", {}).get("readyReplicas")]
+print(" ".join(bad)); sys.exit(1 if bad else 0)' "$PLATFORM_NS" "$SINGLE" "$1"; }
 pg() { kc -n oif-db get clusters.postgresql.cnpg.io oif-pg -o jsonpath="{.status.$1}" 2>/dev/null; }
 pg_moved() {   # the database primary runs on another node and at least two instances are ready
   local p n; p=$(pg currentPrimary); [ -n "$p" ] || return 1
@@ -96,9 +102,9 @@ check "API address held by another node" bash -c "[ \"\$(kubectl --kubeconfig $K
 check "etcd keeps a majority (writes work)" bash -c "kubectl --kubeconfig $KCFG -n default create configmap oif-t124-write --from-literal=t=1 && kubectl --kubeconfig $KCFG -n default delete configmap oif-t124-write"
 
 # the platform keeps serving from its other copies: nobody acts, no taint
-wait_until 180 serving
-info "$(serving >/dev/null && echo "every platform service serving $((SECONDS - t0)) s after NotReady" || echo "not serving after $((SECONDS - t0)) s: $(serving)")"
-check "every platform service has a ready copy without $DOWN (no operator action)" serving
+wait_until 180 serving copies
+info "$(serving copies >/dev/null && echo "every replicated platform service serving $((SECONDS - t0)) s after NotReady" || echo "not serving after $((SECONDS - t0)) s: $(serving copies)")"
+check "every replicated platform service has a ready copy without $DOWN (no operator action)" serving copies
 wait_until 120 pg_moved
 check "database primary on another node, at least 2 instances ready" pg_moved
 info "database primary now $(pg currentPrimary), $(pg readyInstances) instance(s) ready"
@@ -124,9 +130,12 @@ check "a third workload (second NVIDIA) waits: quota 1 in pool nvidia" bash -c "
 info "waiting reason: $(kc -n "$NS" get events --field-selector involvedObject.name=gpu-quota-test-2 -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | tail -1 | cut -c1-120)"
 kc -n "$NS" delete pod gpu-quota-test gpu-quota-test-2 amd-quota-test --wait=false >/dev/null 2>&1
 
-# the dashboards: both GPU nodes reported, Grafana answers
+# the dashboards: both GPU nodes reported (kube-state-metrics, single, moves 20 s after NotReady), Grafana answers
+gpu_series() { local g; g=$(prom 'count by (vendor, node) (oif:gpu_allocatable)'); grep -q '^nvidia ' <<< "$g" && grep -q '^amd ' <<< "$g"; }
+wait_until $((120 - (SECONDS - t0))) gpu_series
 gpus=$(prom 'count by (vendor, node) (oif:gpu_allocatable)'); sed 's/^/        oif:gpu_allocatable /' <<< "$gpus"
-check "Prometheus reports both vendors' GPU nodes" bash -c "grep -q '^nvidia ' <<< '$gpus' && grep -q '^amd ' <<< '$gpus'"
+info "GPU series checked $((SECONDS - t0)) s after NotReady"
+check "Prometheus reports both vendors' GPU nodes within 120 s of NotReady" gpu_series
 check "Grafana dashboards OIF Fleet and OIF Scheduling answer" grafana_ok
 
 # what users saw: the longest time each answer was missing, from the power-off on
@@ -136,6 +145,11 @@ info "longest outage seen by users: Run:ai UI ${UI_GAP} s, Grafana ${GF_GAP} s, 
 check "Run:ai UI never away longer than ${HA_MAX} s" bash -c "[ $UI_GAP -le $HA_MAX ]"
 check "Grafana never away longer than ${HA_MAX} s" bash -c "[ $GF_GAP -le $HA_MAX ]"
 check "Kubernetes API never away longer than ${HA_MAX} s" bash -c "[ $API_GAP -le $HA_MAX ]"
+
+# the single-copy controllers start elsewhere once Kubernetes evicts them (300 s after NotReady), still with nobody acting
+wait_until $((480 - (SECONDS - t0))) serving singles
+info "$(serving singles >/dev/null && echo "single-copy controllers running again $((SECONDS - t0)) s after NotReady" || echo "still down after $((SECONDS - t0)) s: $(serving singles)")"
+check "single-copy controllers restarted on another node (no operator action)" serving singles
 
 echo "        power $DOWN on again (hybrid-gpu-lab host: virsh start hl-$DOWN); waiting up to 15 min ..."
 wait_until 900 ready_is "$DOWN" True; check "$DOWN Ready again" ready_is "$DOWN" True

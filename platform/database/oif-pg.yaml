@@ -12,6 +12,11 @@ spec:
   imageName: ${CNPG_PG_IMAGE}
   primaryUpdateStrategy: unsupervised
   failoverDelay: 0
+  postgresql:
+    parameters:
+      # Run:ai's services run two copies each and keep pools; the default 100 ran out and left Grafana without a
+      # connection after a failover
+      max_connections: "400"
   enableSuperuserAccess: true          # Run:ai's post-install job logs in as postgres to set its user's role
   superuserSecret:
     name: oif-pg-superuser

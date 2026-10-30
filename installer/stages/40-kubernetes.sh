@@ -224,6 +224,12 @@ stage_metallb() {
     kc -n metallb-system patch deploy controller --type merge -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"$SYSTEM_LABEL\":\"true\"}}}}}" >> "$LOG" \
       || die "cannot place the MetalLB controller"
   fi
+  if platform_ha; then   # one copy by design (ADR-022): it leaves a node that went down after 20 s, not 300 s
+    kc -n metallb-system patch deploy controller --type merge -p '{"spec":{"template":{"spec":{"tolerations":[
+      {"key":"node.kubernetes.io/not-ready","operator":"Exists","effect":"NoExecute","tolerationSeconds":20},
+      {"key":"node.kubernetes.io/unreachable","operator":"Exists","effect":"NoExecute","tolerationSeconds":20}]}}}}' >> "$LOG" \
+      || die "cannot set the MetalLB controller's tolerations"
+  fi
   kc -n metallb-system rollout status deploy/controller --timeout=300s >> "$LOG" || die "MetalLB controller not ready"
   kc -n metallb-system rollout status ds/speaker --timeout=300s >> "$LOG" || die "MetalLB speaker not ready"
   export METALLB_RANGE
