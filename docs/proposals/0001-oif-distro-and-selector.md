@@ -153,17 +153,19 @@ The administrator picks a blueprint, then sets only its parameters (node counts,
 
 ## 7. Proposed ADRs
 
+ADR-022 went to T-124 (platform HA) while this proposal was open, so its ADRs start at 023.
+
 | ADR | Subject |
 |-----|---------|
-| 022 | Monthly release model, two tracks, support window |
-| 023 | Release catalog, constraint selector, lockfile (versions.env becomes the catalog source) |
-| 024 | Vendor-specification preflight and the customer spec report |
-| 025 | Topology: 1 or 3 control-plane nodes on the open track; vendor footprint for blueprints |
-| 026 | Node discovery (opt-in CIDR, read-only probe) and day-2 node add and remove |
-| 027 | Commercial blueprint policy: supported install paths only, customer-supplied licences |
-| 028 | Pool environments and the accelerator adapter contract |
-| 029 | OIF owns tenants, projects and quotas; schedulers are adapters (amends ADR-005) |
-| 030 | API server: one OpenAI-compatible interface across pool environments |
+| 023 | Monthly release model, two tracks, support window |
+| 024 | Release catalog, constraint selector, lockfile (versions.env becomes the catalog source) |
+| 025 | Vendor-specification preflight and the customer spec report |
+| 026 | Topology: 1 or 3 control-plane nodes on the open track; vendor footprint for blueprints |
+| 027 | Node discovery (opt-in CIDR, read-only probe) and day-2 node add and remove |
+| 028 | Commercial blueprint policy: supported install paths only, customer-supplied licences |
+| 029 | Pool environments and the accelerator adapter contract |
+| 030 | OIF owns tenants, projects and quotas; schedulers are adapters (amends ADR-005) |
+| 031 | API server: one OpenAI-compatible interface across pool environments |
 
 ## 8. Proof-of-concept scope (first release, open track)
 
@@ -179,7 +181,7 @@ Implementation note: the catalog as JSON and the selector in Python using only t
 ## 9. Proposed order
 
 1. Finish T-124 (multi-node demonstration) and T-003 (CI); merge the T-124 pull request.
-2. ADRs 022 to 030 and the PRD and ARCHITECTURE updates (Grok); review (ChatGPT); owner acceptance.
+2. ADRs 023 to 031 and the PRD and ARCHITECTURE updates (Grok); review (ChatGPT); owner acceptance.
 3. Refactor into adapters with no change in behaviour, gated by the lab suites.
 4. Catalog, selector, lockfile, `oif plan`; discovery and `oif node add`.
 5. OIF tenancy model; Kueue adapter beside Run:ai + KAI.
