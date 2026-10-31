@@ -1,0 +1,77 @@
+T-120 node list, cluster key and node runner
+  PASS  settings name more than one node (OIF_NODES)
+  PASS  this host is the first node in the list
+  PASS  cluster key exists, readable by root only
+  PASS  stage 'nodes' finished
+node cp2 (192.168.120.12, control)
+  PASS  reachable with the cluster key only (no agent), sudo without a password
+  PASS  recorded for uninstall (NODE, NODEKEY)
+  PASS  oif copied to /var/lib/oif/src
+  PASS  node stage preflight done
+  PASS  node stage host-packages done
+  PASS  node stage kernel done
+  PASS  node stage storage-host done
+  PASS  node stage containerd done
+  PASS  node stage nvidia-driver done
+  PASS  node stage amd-firmware done
+  PASS  node stage gpu-isolation done
+  PASS  node stage reboot done
+  PASS  node stage host-verify done
+  PASS  node stage k8s-packages done
+  PASS  only the node settings were sent (no passwords or tokens)
+  PASS  node keeps its own change record
+node cp3 (192.168.120.13, control)
+  PASS  reachable with the cluster key only (no agent), sudo without a password
+  PASS  recorded for uninstall (NODE, NODEKEY)
+  PASS  oif copied to /var/lib/oif/src
+  PASS  node stage preflight done
+  PASS  node stage host-packages done
+  PASS  node stage kernel done
+  PASS  node stage storage-host done
+  PASS  node stage containerd done
+  PASS  node stage nvidia-driver done
+  PASS  node stage amd-firmware done
+  PASS  node stage gpu-isolation done
+  PASS  node stage reboot done
+  PASS  node stage host-verify done
+  PASS  node stage k8s-packages done
+  PASS  only the node settings were sent (no passwords or tokens)
+  PASS  node keeps its own change record
+node gpu-amd (192.168.120.21, worker)
+  PASS  reachable with the cluster key only (no agent), sudo without a password
+  PASS  recorded for uninstall (NODE, NODEKEY)
+  PASS  oif copied to /var/lib/oif/src
+  PASS  node stage preflight done
+  PASS  node stage host-packages done
+  PASS  node stage kernel done
+  PASS  node stage storage-host done
+  PASS  node stage containerd done
+  PASS  node stage nvidia-driver done
+  PASS  node stage amd-firmware done
+  PASS  node stage gpu-isolation done
+  PASS  node stage reboot done
+  PASS  node stage host-verify done
+  PASS  node stage k8s-packages done
+  PASS  only the node settings were sent (no passwords or tokens)
+  PASS  node keeps its own change record
+node gpu-nvidia (192.168.120.22, worker)
+  PASS  reachable with the cluster key only (no agent), sudo without a password
+  PASS  recorded for uninstall (NODE, NODEKEY)
+  PASS  oif copied to /var/lib/oif/src
+  PASS  node stage preflight done
+  PASS  node stage host-packages done
+  PASS  node stage kernel done
+  PASS  node stage storage-host done
+  PASS  node stage containerd done
+  PASS  node stage nvidia-driver done
+  PASS  node stage amd-firmware done
+  PASS  node stage gpu-isolation done
+  PASS  node stage reboot done
+  PASS  node stage host-verify done
+  PASS  node stage k8s-packages done
+  PASS  only the node settings were sent (no passwords or tokens)
+  PASS  node keeps its own change record
+  PASS  NVIDIA node: driver loaded, nvidia-smi sees the GPU
+  PASS  NVIDIA node: nouveau blocked
+
+T-120: PASS (70 checks)

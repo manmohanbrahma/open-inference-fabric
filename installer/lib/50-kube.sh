@@ -4,6 +4,9 @@
 KCFG=/etc/kubernetes/admin.conf
 kc() { kubectl --kubeconfig "$KCFG" "$@"; }
 hl() { helm --kubeconfig "$KCFG" "$@"; }
+# helm (and the Run:ai installer, which uses helm's library) keeps its cache and repositories under $HOME, which is / in
+# the background job: kept in the state folder instead, so uninstall removes them with it
+export HELM_CACHE_HOME=$STATE/helm/cache HELM_CONFIG_HOME=$STATE/helm/config HELM_DATA_HOME=$STATE/helm/data
 
 render() {   # template: print it with ${VAR} replaced from the environment (only the variables named in it)
   python3 - "$1" <<'PY'
@@ -31,7 +34,8 @@ nets = set()
 for line in subprocess.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True).stdout.splitlines():
     nets.add(ipaddress.ip_network(line.split()[3], strict=False))
 for line in subprocess.run(["ip", "-4", "route"], capture_output=True, text=True).stdout.splitlines():
-    dst = line.split()[0]
+    words = line.split()
+    dst = words[1] if words[0] in ("blackhole", "unreachable", "prohibit", "throw", "local", "broadcast", "multicast", "unicast") else words[0]
     if dst != "default":
         nets.add(ipaddress.ip_network(dst if "/" in dst else dst + "/32", strict=False))
 clash = [str(n) for n in nets if n.overlaps(want)]

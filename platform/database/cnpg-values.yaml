@@ -1,0 +1,14 @@
+# CloudNativePG operator (ADR-022): two copies on the platform nodes, on different nodes; it leads by election.
+# Only an operator that runs can promote a standby, so it must not die with the node that held the primary.
+replicaCount: 2
+nodeSelector:
+  ${SYSTEM_LABEL}: "true"
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: cloudnative-pg
+monitoring:
+  podMonitorEnabled: false

@@ -1,0 +1,36 @@
+# Longhorn check (stage longhorn): a pod on a platform node writes to a replicated volume. Deleted after the check.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oif-longhorn-test
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: oif-longhorn-test
+spec:
+  storageClassName: longhorn
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+  namespace: oif-longhorn-test
+spec:
+  nodeSelector:
+    ${SYSTEM_LABEL}: "true"
+  containers:
+    - name: writer
+      image: ${BUSYBOX_IMAGE}
+      command: ["sh", "-c", "echo oif-longhorn-ok > /data/check && sync && sleep 3600"]
+      volumeMounts:
+        - {name: data, mountPath: /data}
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data

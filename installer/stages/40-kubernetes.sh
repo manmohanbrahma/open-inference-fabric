@@ -25,7 +25,27 @@ stage_k8s_packages() {
   ok "kubeadm, kubelet, kubectl $KUBERNETES_VERSION (held); helm $(helm version --short | cut -d+ -f1)"
 }
 
-register_stage nodes nodes_rev   # multi-node: the node stages above on every other node (installer/lib/60-nodes.sh);
+register_stage conntrack-reaper
+stage_conntrack_reaper() {   # ADR-022: connections to a pod on a node that went down fail at once instead of hanging
+  command -v conntrack >/dev/null && command -v iptables-save >/dev/null || apt_install conntrack iptables
+  put_file /usr/local/sbin/oif-conntrack-reaper "$(cat "$K8S_TEMPLATES/conntrack-reaper.sh")
+" 755
+  put_file /etc/systemd/system/oif-conntrack-reaper.service "[Unit]
+Description=oif: drop connections to Kubernetes endpoints that are gone
+After=network-online.target
+[Service]
+ExecStart=/usr/local/sbin/oif-conntrack-reaper
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+"
+  systemctl daemon-reload; systemctl enable --now oif-conntrack-reaper >/dev/null 2>&1; rec "SERVICE oif-conntrack-reaper"
+  systemctl is-active -q oif-conntrack-reaper || die "oif-conntrack-reaper did not start (journalctl -u oif-conntrack-reaper)"
+  ok "conntrack reaper running: connections to endpoints that are gone are dropped within about 4 s"
+}
+
+register_stage nodes nodes_rev  # multi-node: the node stages above on every other node (installer/lib/60-nodes.sh);
                                  # reruns when the node stages change (each node still skips the ones it has done)
 
 register_stage kubernetes
@@ -40,7 +60,7 @@ stage_kubernetes() {
   if [ ! -f "$KCFG" ]; then
     rec "TEARDOWN kubernetes"
     API_ENDPOINT=$(api_endpoint)
-    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS API_ENDPOINT
+    export HOST_IP POD_CIDR SERVICE_CIDR KUBERNETES_VERSION KUBELET_MAX_PODS NODE_MONITOR_GRACE NODE_LEASE_SECONDS API_ENDPOINT
     render "$K8S_TEMPLATES/kubeadm.yaml" > "$STATE/kubeadm.yaml" || die "cannot render the kubeadm configuration"
     # several control-plane nodes: kube-vip holds the API address; during init it needs super-admin.conf (ADR-017)
     [ -n "${OIF_API_VIP:-}" ] && kube_vip_manifest /etc/kubernetes/super-admin.conf "$HOST_IP"
@@ -101,7 +121,13 @@ for p in (json.loads(text).get("items") or [] if text else []):
       ok "workload pods stopped and removed ($(wc -w <<< "$ids"))"
     fi
   fi
+  # kube-vip added the API address to this node's interface; stopped, it leaves it there, and a node that keeps it
+  # answers its own joins to that address with "connection refused" on the next install
+  local vip=""; [ -f /etc/kubernetes/manifests/kube-vip.yaml ] \
+    && vip=$(sed -n 's/.*{name: address, value: "\([0-9.]*\)"}.*/\1/p' /etc/kubernetes/manifests/kube-vip.yaml)
   kubeadm reset -f --cri-socket unix:///run/containerd/containerd.sock >> "$LOG" 2>&1 || true
+  if [ -n "$vip" ]; then local d; for d in $(ip -o -4 addr show | awk -v a="$vip/32" '$4 == a {print $2}'); do
+    ip addr del "$vip/32" dev "$d" >/dev/null 2>&1 || true; done; fi
   systemctl disable --now kubelet >/dev/null 2>&1 || true
   local t   # no mount left is fine: grep's "no match" must not fail the pipeline
   findmnt -rn -o TARGET | { grep -E '^/(var/lib/kubelet|run/netns|run/calico|var/lib/calico)(/|$)' || true; } | sort -r \
@@ -110,6 +136,11 @@ for p in (json.loads(text).get("items") or [] if text else []):
     /run/calico /var/log/calico /var/run/nodeagent /var/log/pods /var/log/containers 2>>"$LOG" || true
   local l; for l in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -E '^(cali|vxlan\.calico|tunl0|kube-ipvs0)'); do
     ip link delete "$l" >/dev/null 2>&1 || true; done
+  # Calico leaves its routes (protocol 80), e.g. "blackhole 10.244.176.0/26": a later install would see the
+  # pod range as taken
+  local r; ip -4 route show proto 80 2>/dev/null | while read -r r; do
+    # shellcheck disable=SC2086
+    ip route del $r proto 80 >/dev/null 2>&1 || true; done
   # Calico copies its CNI plugins next to the kubernetes-cni package's; left there, dpkg cannot remove /opt/cni
   rm -f /opt/cni/bin/calico /opt/cni/bin/calico-ipam /opt/cni/bin/flannel 2>/dev/null || true
   local ipt; for ipt in iptables ip6tables; do   # drop only Kubernetes' and Calico's rules, keep everything else
@@ -136,6 +167,18 @@ stage_calico() {
     || die "not every node is Ready (kubectl get nodes; kubectl describe node)"
 }
 
+register_stage system-nodes
+stage_system_nodes() {   # multi-node: the control-plane nodes carry the platform, labelled with Run:ai's system-node role
+  multi_node || { ok "single node"; return 0; }
+  local name addr role node l=""
+  while read -r -u 3 name addr role; do
+    [ "$role" = control ] || continue
+    node=$(node_name_of "$addr"); [ -n "$node" ] || die "$name ($addr) is not a Kubernetes node"
+    kc label node "$node" "$SYSTEM_LABEL=true" --overwrite >> "$LOG" || die "cannot label $node"; l+=" $node"
+  done 3< <(nodes_list)
+  ok "platform nodes ($SYSTEM_LABEL):$l; GPU nodes run workloads only"
+}
+
 register_stage storage
 stage_storage() {
   local tmp; tmp=$(mktemp)
@@ -149,16 +192,76 @@ stage_storage() {
   ok "default StorageClass local-path, volumes in $INSTALL_DIR/volumes"
 }
 
+register_stage longhorn LONGHORN_VERSION
+stage_longhorn() {   # three or more control-plane nodes: the platform's data on Longhorn, a copy on each (ADR-021)
+  platform_ha || { ok "platform data on local-path ($(multi_node && echo 'fewer than 3 control-plane nodes' || echo 'single node'))"; return 0; }
+  local chart=$STATE/charts/longhorn-$LONGHORN_VERSION.tgz n; mkdir -p "$STATE/charts"
+  [ -s "$chart" ] || fetch_pinned "https://github.com/longhorn/charts/releases/download/longhorn-$LONGHORN_VERSION/longhorn-$LONGHORN_VERSION.tgz" "$LONGHORN_SHA256" "$chart"
+  n=$(control_count); [ "$n" -gt 3 ] && n=3
+  export LONGHORN_DATA=$INSTALL_DIR/longhorn LONGHORN_REPLICAS=$n SYSTEM_LABEL
+  render "$OIF_HOME/platform/storage/longhorn-values.yaml" > "$STATE/longhorn-values.yaml"
+  log "Longhorn $LONGHORN_VERSION on the control-plane nodes (3-5 min)"
+  hl upgrade --install longhorn "$chart" -n longhorn-system --create-namespace -f "$STATE/longhorn-values.yaml" --wait --timeout 15m >> "$LOG" 2>&1 \
+    || die "Longhorn failed (kubectl -n longhorn-system get pods)"
+  wait_for "$(control_count) Longhorn node(s) ready" 600 10 longhorn_nodes_ready \
+    || die "Longhorn nodes not ready (kubectl -n longhorn-system get nodes.longhorn.io)"
+  # helm returns before Longhorn's driver deployer has made the CSI driver; its sidecars restart until the plugin on
+  # their node answers (6-8 min on the reference run)
+  wait_for "Longhorn CSI driver ready" 900 10 longhorn_csi_ready \
+    || die "Longhorn CSI driver not ready (kubectl -n longhorn-system get pods | grep csi)"
+  # a test volume: bound, written by a pod, every replica healthy
+  export BUSYBOX_IMAGE; render "$OIF_HOME/platform/storage/longhorn-test.yaml" | kc apply -f - >> "$LOG" || die "Longhorn test could not be created"
+  wait_for "test pod writes to a Longhorn volume" 300 5 pod_running oif-longhorn-test writer \
+    || die "test pod on a Longhorn volume not running (kubectl -n oif-longhorn-test describe pod writer)"
+  local pv; pv=$(kc -n oif-longhorn-test get pvc data -o jsonpath='{.spec.volumeName}')
+  wait_for "test volume healthy ($LONGHORN_REPLICAS copies)" 300 5 longhorn_volume_is "$pv" healthy \
+    || die "Longhorn test volume not healthy (kubectl -n longhorn-system get volumes.longhorn.io)"
+  kc delete namespace oif-longhorn-test --wait=true >> "$LOG" 2>&1 || warn "test namespace oif-longhorn-test not deleted"
+  ok "Longhorn $LONGHORN_VERSION: StorageClass longhorn, $LONGHORN_REPLICAS copies of each volume on the control-plane nodes, data in $LONGHORN_DATA"
+}
+longhorn_nodes_ready() {   # every control-plane node is a ready, schedulable Longhorn node
+  [ "$(kc -n longhorn-system get nodes.longhorn.io -o json | python3 -c 'import json, sys
+ok = lambda n, t: any(c["type"] == t and c["status"] == "True" for c in n.get("status", {}).get("conditions", []))
+print(sum(ok(n, "Ready") and ok(n, "Schedulable") for n in json.load(sys.stdin)["items"]))')" = "$(control_count)" ]; }
+longhorn_csi_ready() {   # the CSI plugin on every Longhorn node, and every CSI sidecar deployment, fully ready
+  kc -n longhorn-system get ds/longhorn-csi-plugin deploy/csi-attacher deploy/csi-provisioner deploy/csi-resizer deploy/csi-snapshotter -o json 2>/dev/null \
+    | python3 -c 'import json, sys
+items = json.load(sys.stdin)["items"]
+def ready(o):
+    s = o.get("status", {})
+    if o["kind"] == "DaemonSet": return s.get("desiredNumberScheduled", 0) > 0 and s.get("numberReady") == s["desiredNumberScheduled"]
+    return s.get("readyReplicas", 0) == o["spec"].get("replicas", 1)
+sys.exit(0 if len(items) == 5 and all(ready(o) for o in items) else 1)'; }
+longhorn_volume_is() { [ "$(kc -n longhorn-system get volumes.longhorn.io "$1" -o jsonpath='{.status.robustness}')" = "$2" ]; }   # pv robustness
+pod_running() { [ "$(kc -n "$1" get pod "$2" -o jsonpath='{.status.phase}' 2>/dev/null)" = Running ]; }   # namespace pod
+
 register_stage metallb
 stage_metallb() {
   local tmp; tmp=$(mktemp)
   fetch_pinned "https://raw.githubusercontent.com/metallb/metallb/$METALLB_VERSION/config/manifests/metallb-native.yaml" "$METALLB_SHA256" "$tmp"
   kc apply -f "$tmp" >> "$LOG" || die "MetalLB failed"; rm -f "$tmp"
+  if multi_node; then   # the controller on the platform nodes; the speakers stay on every node
+    kc -n metallb-system patch deploy controller --type merge -p "{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"$SYSTEM_LABEL\":\"true\"}}}}}" >> "$LOG" \
+      || die "cannot place the MetalLB controller"
+  fi
+  if platform_ha; then   # one copy by design (ADR-022): it leaves a node that went down after 20 s, not 300 s
+    kc -n metallb-system patch deploy controller --type merge -p '{"spec":{"template":{"spec":{"tolerations":[
+      {"key":"node.kubernetes.io/not-ready","operator":"Exists","effect":"NoExecute","tolerationSeconds":20},
+      {"key":"node.kubernetes.io/unreachable","operator":"Exists","effect":"NoExecute","tolerationSeconds":20}]}}}}' >> "$LOG" \
+      || die "cannot set the MetalLB controller's tolerations"
+  fi
   kc -n metallb-system rollout status deploy/controller --timeout=300s >> "$LOG" || die "MetalLB controller not ready"
   kc -n metallb-system rollout status ds/speaker --timeout=300s >> "$LOG" || die "MetalLB speaker not ready"
   export METALLB_RANGE
   local n=0; until render "$K8S_TEMPLATES/metallb-pool.yaml" | kc apply -f - >> "$LOG" 2>&1; do   # webhook needs a moment
     n=$((n + 1)); [ $n -ge 12 ] && die "MetalLB address pool rejected (kubectl -n metallb-system logs deploy/controller)"; sleep 10; done
+  if multi_node; then   # the platform's addresses answer from the platform nodes only: losing a GPU node never moves them
+    # kubeadm marks control-plane nodes to be left out of load balancers; in oif they are the platform nodes
+    kc label nodes -l "$SYSTEM_LABEL=true" node.kubernetes.io/exclude-from-external-load-balancers- >> "$LOG" 2>&1 \
+      || die "cannot let the platform nodes announce MetalLB addresses"
+    kc -n metallb-system patch l2advertisement oif --type merge \
+      -p "{\"spec\":{\"nodeSelectors\":[{\"matchLabels\":{\"$SYSTEM_LABEL\":\"true\"}}]}}" >> "$LOG" || die "cannot limit MetalLB to the platform nodes"
+  fi
   ok "MetalLB pool $METALLB_RANGE"
 }
 

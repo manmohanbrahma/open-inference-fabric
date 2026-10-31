@@ -145,6 +145,99 @@ T-123: PASS (27 checks)
 
 A workload chooses a pool with the label `runai/node-pool: nvidia` (or `amd`); in the Run:ai UI, pick the node pool when submitting. A project's quota is set per pool (Organization, Projects).
 
+## High availability: losing a control-plane node
+
+**Step:** T-124 (ADR-022). **Tested:** 2026-10-31 on a fresh install, run 7 of the T-124 test.
+
+With three control-plane nodes oif installs the platform in copies on different control-plane nodes (ADR-022), with nothing to set:
+
+| Part | Copies |
+| --- | --- |
+| Kubernetes API, etcd | 3, one API address held by kube-vip |
+| Ingress address | MetalLB, announced only from the control-plane nodes |
+| Run:ai control plane, Run:ai cluster side, KAI Scheduler | 2 of each, never on the same node |
+| Keycloak | 3, sessions shared through the database |
+| Database | CloudNativePG, 3 PostgreSQL 16 instances, one per control-plane node, automatic failover |
+| Thanos receive, NATS | 3 |
+| Prometheus / Alertmanager / Grafana | 2 / 3 / 2 (Grafana's state in the database) |
+
+What makes a failover fast enough, each from a failed lab run: a silent node is declared down after 20 s; `max_connections` 400; `oif-conntrack-reaper` on every node drops connections to pods that are gone (without it Keycloak and Run:ai hung on the old database primary for about 15 minutes); the 20 s move of the singles users would miss (kube-state-metrics, the Prometheus operator, the MetalLB controller); `wal_keep_size` 4GB so a copy whose node was off for hours can catch up.
+
+### Demonstration
+
+Power off the worst node to lose, the one holding both the database primary and the ingress address, and measure from inside and from outside the cluster.
+
+1. Find that node and, if needed, move the database primary to it (a CloudNativePG switchover):
+
+   ```bash
+   kubectl get servicel2statuses.metallb.io -A -o custom-columns=NODE:.status.node     # ingress address, e.g. cp2
+   kubectl -n oif-db get pod -l cnpg.io/cluster=oif-pg -o wide                         # oif-pg-2 runs on cp2
+   kubectl -n oif-db patch clusters.postgresql.cnpg.io oif-pg --subresource=status --type merge \
+     -p "{\"status\":{\"targetPrimary\":\"oif-pg-2\",\"targetPrimaryTimestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000000Z)\",\"phase\":\"Switchover in progress\"}}"
+   ```
+
+   Use the full resource name `clusters.postgresql.cnpg.io`: Run:ai installs its own `cluster` resource.
+
+2. On a machine outside the cluster that reaches the ingress address (the lab host), with the oif CA (`~/oif-ca.crt` on cp1) and the Run:ai and Grafana logins in the environment, start the user probe. Every 5 s it opens the UI, logs in to Run:ai and calls its API, and searches Grafana:
+
+   ```bash
+   export RUNAI_URL=https://runai.192-168-120-240.sslip.io RUNAI_USER=... RUNAI_PASSWORD=...
+   export GRAFANA_URL=https://grafana.runai.192-168-120-240.sslip.io GRAFANA_USER=admin GRAFANA_PASSWORD=...
+   OIF_CA=oif-ca.crt python3 tests/lab/t124-probe.py --seconds 1500 | tee probe.txt
+   ```
+
+3. On another control-plane node start the test, and power the node off when it asks (the lab: `virsh destroy hl-cp2`), on again when it asks again (`virsh start hl-cp2`):
+
+   ```bash
+   sudo tests/lab/t124-ha.sh cp2
+   ```
+
+   Run both detached (`systemd-run`, `setsid nohup`) if your connection to the lab may drop: a run was lost that way.
+
+Results of the reference run (2026-10-31, cp2 held the database primary and the ingress address; evidence in `docs/evidence/T-124/`):
+
+```text
+        power cp2 off now (hybrid-gpu-lab host: virsh destroy hl-cp2); waiting up to 15 min ...
+        cp2 is down (NotReady)
+        every replicated platform service serving 42 s after NotReady
+        database primary now oif-pg-1, 2 instance(s) ready
+  PASS  Run:ai API: log in and keep project team-c (quota 1 GPU per vendor pool)
+  PASS  NVIDIA workload runs in pool nvidia (gpu-nvidia)
+  PASS  AMD workload runs in pool amd (gpu-amd)
+  PASS  a third workload (second NVIDIA) waits: quota 1 in pool nvidia
+        GPU series checked 103 s after NotReady
+        longest outage seen by users: Run:ai UI 0 s, Grafana 47 s, Kubernetes API 0 s (probe every 5 s; limit 90 s)
+        single-copy controllers running again 107 s after NotReady
+  PASS  cp2 Ready again
+  PASS  database back to all its instances
+T-124: PASS (23 checks)
+```
+
+The outside probe (seconds from its start, time, UI, login with API call, Grafana; cp2 off at 04:25:35):
+
+```text
+95 04:25:30 1 1 1
+100 04:25:52 1 0 0
+117 04:26:02 1 0 0
+...
+147 04:26:32 1 0 1
+157 04:26:42 1 0 1
+167 04:26:44 1 1 1
+longest outage: ui 0 s, login 67 s, grafana 47 s
+disturbed for (first failure to the last recovery, flapping included): ui 0 s, login 67 s, grafana 47 s (limit 90 s)
+```
+
+Every answer back within 90 s and no relapse in the 20 minutes after, with nobody acting. The way there, all on the lab: run 1 lost Grafana for 94 s (the database ran out of connections); run 3 passed inside while real logins failed (connections stuck on the dead primary, fixed by the reaper); run 5 left cp2 off for 4.5 h, the platform kept working, and the database copy on cp2 could not rejoin (fixed by `wal_keep_size`; the copy was rebuilt).
+
+### When a node comes back
+
+Its copies rejoin by themselves. Check the database: `kubectl -n oif-db get clusters.postgresql.cnpg.io oif-pg` shows 3 ready instances. If an instance stays `0/1` with `requested WAL segment ... has already been removed` in its log, the node was off longer than the primary keeps its log (about 20 h in the lab); rebuild that copy, which CloudNativePG clones from the primary in about a minute:
+
+```bash
+kubectl -n oif-db delete pvc oif-pg-2
+kubectl -n oif-db delete pod oif-pg-2
+```
+
 ## What changed on the nodes
 
 Each node keeps its own change record in `/var/lib/oif`, the same kinds as a single host (guide 9): packages, kernel settings, containerd, the NVIDIA driver with nouveau blocked or the AMD firmware package, Kubernetes. The first node also records which nodes it prepared and the keys it added (`NODE`, `NODEKEY`, `ADMINKEY`). `sudo ./oif uninstall` on the first node uninstalls every node from its own record, then removes oif's key and any admin key it added.

@@ -1,0 +1,58 @@
+# The platform's database (ADR-022): one PostgreSQL instance per control-plane node, streaming replication, and
+# CloudNativePG promotes a standby when the primary's node goes away. Each instance keeps its data on its own node
+# (local-path): PostgreSQL makes the copies, so a second copying layer (Longhorn) would only add latency.
+# Passwords live in secrets the oif stage creates; none is written here.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: oif-pg
+  namespace: oif-db
+spec:
+  instances: ${PG_INSTANCES}
+  imageName: ${CNPG_PG_IMAGE}
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  postgresql:
+    parameters:
+      # Run:ai's services run two copies each and keep pools; the default 100 ran out and left Grafana without a
+      # connection after a failover
+      max_connections: "400"
+      # a copy whose node was down catches up from the primary's log; the default 512MB lasted about 2.5 h in the lab
+      # (about 200 MB of log an hour) and a copy back after 4.5 h could not rejoin. 4GB is about 20 h; a longer outage
+      # needs the copy rebuilt (guide 10, day-2)
+      wal_keep_size: "4GB"
+  enableSuperuserAccess: true          # Run:ai's post-install job logs in as postgres to set its user's role
+  superuserSecret:
+    name: oif-pg-superuser
+  bootstrap:
+    initdb:
+      database: backend                # Run:ai's database; its user owns it and Keycloak's schema in it
+      owner: runai                     # Run:ai's default user name is "user", a reserved word in SQL
+      secret:
+        name: oif-pg-runai
+  managed:
+    roles:
+      - name: grafana
+        login: true
+        passwordSecret:
+          name: oif-pg-grafana
+  storage:
+    storageClass: local-path
+    size: 20Gi
+  affinity:
+    nodeSelector:
+      ${SYSTEM_LABEL}: "true"
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: oif-pg-grafana
+  namespace: oif-db
+spec:
+  cluster:
+    name: oif-pg
+  name: grafana
+  owner: grafana

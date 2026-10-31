@@ -1,0 +1,24 @@
+# Longhorn (ADR-021): replicated volumes for the platform's data (Run:ai database, monitoring) on the control-plane
+# nodes only (Run:ai's system-node role). local-path stays the default StorageClass for workload volumes.
+persistence:
+  defaultClass: false
+  defaultClassReplicaCount: ${LONGHORN_REPLICAS}    # one copy per control-plane node (at most 3)
+  reclaimPolicy: Delete
+defaultSettings:
+  defaultDataPath: ${LONGHORN_DATA}
+  systemManagedComponentsNodeSelector: "${SYSTEM_LABEL}:true"   # CSI, instance and engine managers
+  # a pod on a node that went down keeps its volume until deleted: Longhorn deletes it, so the volume moves with the
+  # new pod (Run:ai's database is a StatefulSet, Grafana a Deployment)
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+  upgradeChecker: false                 # no calls home; versions come from versions.env
+  allowCollectingLonghornUsageMetrics: false
+  deletingConfirmationFlag: true        # lets 'helm uninstall longhorn' run when it is removed on purpose
+longhornManager:
+  nodeSelector:
+    ${SYSTEM_LABEL}: "true"
+longhornDriver:
+  nodeSelector:
+    ${SYSTEM_LABEL}: "true"
+longhornUI:
+  nodeSelector:
+    ${SYSTEM_LABEL}: "true"

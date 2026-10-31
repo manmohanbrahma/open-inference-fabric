@@ -14,7 +14,9 @@ stage_prometheus() {
   kc -n monitoring create secret generic grafana-admin --from-literal=admin-user=admin --from-file=admin-password="$pw" \
     --dry-run=client -o yaml | kc apply -f - >> "$LOG"; rm -f "$pw"
   log "kube-prometheus-stack $KPS_VERSION (3-5 min)"
-  hl upgrade --install kps "$chart" -n monitoring -f "$OIF_HOME/platform/observability/kps-values.yaml" --wait --timeout 15m >> "$LOG" 2>&1 \
+  local more=(); multi_node && { platform_render observability/kps-values-multinode.yaml; more=(-f "$STATE/kps-values-multinode.yaml"); }
+  platform_ha && { export PG_HOST GRAFANA_DB_SECRET; platform_render observability/kps-values-ha.yaml; more+=(-f "$STATE/kps-values-ha.yaml"); }
+  hl upgrade --install kps "$chart" -n monitoring -f "$OIF_HOME/platform/observability/kps-values.yaml" "${more[@]}" --wait --timeout 15m >> "$LOG" 2>&1 \
     || die "kube-prometheus-stack failed (kubectl -n monitoring get pods)"
   ok "Prometheus, Grafana and Alertmanager running (namespace monitoring)"
 }
@@ -25,7 +27,8 @@ stage_ingress() {
   [ -s "$chart" ] || fetch_pinned "https://github.com/haproxytech/helm-charts/releases/download/kubernetes-ingress-$HAPROXY_INGRESS_VERSION/kubernetes-ingress-$HAPROXY_INGRESS_VERSION.tgz" "$HAPROXY_INGRESS_SHA256" "$chart"
   export INGRESS_IP; INGRESS_IP=$(first_ip "$METALLB_RANGE")
   render "$OIF_HOME/platform/ingress/haproxy-values.yaml" > "$STATE/haproxy-values.yaml"
-  hl upgrade --install haproxy-ingress "$chart" -n haproxy-controller --create-namespace -f "$STATE/haproxy-values.yaml" --wait --timeout 10m >> "$LOG" 2>&1 \
+  local more=(); multi_node && { platform_render ingress/haproxy-values-multinode.yaml; more=(-f "$STATE/haproxy-values-multinode.yaml"); }
+  hl upgrade --install haproxy-ingress "$chart" -n haproxy-controller --create-namespace -f "$STATE/haproxy-values.yaml" "${more[@]}" --wait --timeout 10m >> "$LOG" 2>&1 \
     || die "HAProxy ingress controller failed (kubectl -n haproxy-controller get pods)"
   ip=$(kc -n haproxy-controller get svc haproxy-ingress-kubernetes-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
   [ "$ip" = "$INGRESS_IP" ] || die "ingress got address '$ip', expected $INGRESS_IP (is it free in the MetalLB pool?)"
@@ -85,7 +88,7 @@ register_stage runai RUNAI_VERSION
 stage_runai() {
   local bin=$STATE/bin/runai-installer-$RUNAI_VERSION w=$STATE/runai rc=0; mkdir -p "$STATE/bin" "$w"; chmod 700 "$w"
   [ -x "$bin" ] || { fetch_pinned "https://github.com/dsx-ai-factory/run-ai/releases/download/$RUNAI_VERSION/runai-installer-linux-amd64" "$RUNAI_INSTALLER_SHA256" "$bin"; chmod 755 "$bin"; }
-  RUNAI_DOMAIN=$(runai_domain)
+  RUNAI_DOMAIN=$(runai_domain); runai_placement
   export RUNAI_VERSION RUNAI_CLUSTER_NAME RUNAI_DOMAIN RUNAI_TLS_CERT=$PKI/tls.crt RUNAI_TLS_KEY=$PKI/tls.key RUNAI_CA_CERT=$PKI/ca.crt
   render "$OIF_HOME/platform/runai/config.yaml" > "$w/config.yaml"; chmod 600 "$w/config.yaml"
   getent hosts "$RUNAI_DOMAIN" >/dev/null || die "$RUNAI_DOMAIN does not resolve from this host (DNS for sslip.io blocked?)"
@@ -103,7 +106,91 @@ stage_runai() {
   ok "Run:ai $RUNAI_VERSION installed"
 }
 
+runai_placement() {   # installer settings that keep Run:ai on the platform nodes (multi-node), each as one line of JSON
+  export RUNAI_SYSTEM_NODES RUNAI_CP_VALUES
+  export RUNAI_CLUSTER_VALUES
+  if ! multi_node; then RUNAI_SYSTEM_NODES='{"enabled": false}'; RUNAI_CP_VALUES='{}'; RUNAI_CLUSTER_VALUES='{}'; return 0; fi
+  # the cluster chart's subcharts karta and gpu-fractioning (its controller, not the per-GPU daemons) take no global
+  # affinity either (seen on the lab: both on a GPU node)
+  RUNAI_CLUSTER_VALUES=$(LABEL=$SYSTEM_LABEL python3 -c '
+import json, os
+req = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0]"
+v = {}
+for p in ("karta", "kai-resource-management.kai-scheduler.gpu-fractioning"):
+    v[f"{p}.{req}.key"] = os.environ["LABEL"]
+    v[f"{p}.{req}.operator"] = "Exists"
+print(json.dumps(v))')
+  # the selector only names the nodes for the installer's preflight check (oif labels them, stage system-nodes)
+  RUNAI_SYSTEM_NODES="{\"enabled\": true, \"mode\": \"required\", \"label\": \"$SYSTEM_LABEL\", \"manageLabels\": false, \"selector\": {\"$SYSTEM_LABEL\": \"true\"}}"
+  # Helm --set values. The chart copies these subcharts' affinity from a YAML anchor, so the installer's global
+  # affinity does not reach them; their volumes go on the platform's StorageClass.
+  # With three control-plane nodes (ADR-022) every service runs at least two copies on different nodes, and the
+  # database is the CloudNativePG cluster (stage platform-db): losing a node then loses no service.
+  RUNAI_CP_VALUES=$(LABEL=$SYSTEM_LABEL SC=$(platform_sc) HA=$(platform_ha && echo 1) PG_HOST=$PG_HOST \
+    PG_USER=$RUNAI_DB_USER PG_SECRET=$RUNAI_DB_SECRET python3 -c '
+import json, os
+label, sc, ha = os.environ["LABEL"], os.environ["SC"], os.environ["HA"] == "1"
+req = "affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0]"
+anti = "affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0]"
+v = {}
+for p in (("thanos.query", "thanos.receive", "nats") if ha else ("postgresql.primary", "thanos.query", "thanos.receive", "nats")):
+    v[f"{p}.{req}.key"] = label
+    v[f"{p}.{req}.operator"] = "Exists"
+for p in ("postgresql.primary", "thanos.receive", "nats"):
+    v[f"{p}.persistence.storageClass"] = sc
+keycloak = ("nodeAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    nodeSelectorTerms:\n"
+            f"      - matchExpressions:\n          - key: {label}\n            operator: Exists\n")
+if ha:
+    del v["postgresql.primary.persistence.storageClass"]
+    v.update({"postgresql.enabled": False, "global.postgresql.auth.host": os.environ["PG_HOST"],
+              "global.postgresql.auth.username": os.environ["PG_USER"],
+              "global.postgresql.auth.existingSecret": os.environ["PG_SECRET"],
+              "global.replicaCount": 2, "global.requireDefaultPodAntiAffinity": True,
+              # these two set their own count of 1, which the global count does not override
+              "workloadsManager.replicaCount": 2, "workloadsHelper.replicaCount": 2,
+              "keycloakx.autoscaling.enabled": True,   # at least 3 copies
+              "thanos.query.autoscaling.enabled": True, "thanos.query.autoscaling.minReplicas": 2,
+              "thanos.query.autoscaling.maxReplicas": 2,
+              # every sample on all three receivers: any two of them keep metrics flowing; each keeps its own copy
+              "thanos.receive.replicaCount": 3, "thanos.receive.replicationFactor": 3,
+              "thanos.receive.persistence.storageClass": "local-path"})
+    # the subcharts take an explicit affinity, so their copies are spread explicitly: one per node
+    for p, sel in (("thanos.query", ("thanos", "query")), ("thanos.receive", ("thanos", "receive")), ("nats", ("nats", None))):
+        v[f"{p}.{anti}.topologyKey"] = "kubernetes.io/hostname"
+        for i, (key, val) in enumerate((k, x) for k, x in (("app.kubernetes.io/name", sel[0]), ("app.kubernetes.io/component", sel[1])) if x):
+            v[f"{p}.{anti}.labelSelector.matchExpressions[{i}].key"] = key
+            v[f"{p}.{anti}.labelSelector.matchExpressions[{i}].operator"] = "In"
+            v[f"{p}.{anti}.labelSelector.matchExpressions[{i}].values[0]"] = val
+    keycloak += ("podAntiAffinity:\n  requiredDuringSchedulingIgnoredDuringExecution:\n    - topologyKey: kubernetes.io/hostname\n"
+                 "      labelSelector:\n        matchLabels:\n          app.kubernetes.io/name: keycloakx\n")
+v["keycloakx.affinity"] = keycloak
+print(json.dumps(v))')
+}
+
 RUNAI_FRACTIONS_MIN_DRIVER=615   # Run:ai 3.0 support matrix: GPU fractions need driver r615 or later
+# Run:ai's cluster services take their copy count from the operator's RunaiConfig and KAI's Config, not from Helm values.
+# The ones that stay single are operators (and two controllers) without a replica setting or leader election; while
+# one restarts elsewhere, the UI, the API, scheduling and running workloads keep working.
+RUNAI_SINGLE="anyworkload-controller application-controller kai-operator karta-operator krm-operator runai-cluster-gpu-fractioning runai-operator"
+register_stage runai-ha RUNAI_VERSION
+stage_runai_ha() {
+  platform_ha || { ok "Run:ai cluster services: one copy each ($(multi_node && echo 'fewer than 3 control-plane nodes' || echo 'single node'))"; return 0; }
+  kc -n runai patch runaiconfig runai --type merge -p '{"spec":{"global":{"replicaCount":2,"requireDefaultPodAntiAffinity":true}}}' >> "$LOG" \
+    || die "RunaiConfig rejected the replica settings"
+  # with two copies KAI turns on leader election itself (--leader-elect=true): one scheduler decides at a time
+  kc patch configs.kai.scheduler kai-config --type merge -p '{"spec":{"global":{"replicaCount":2,"requireDefaultPodAntiAffinityTerm":true}}}' >> "$LOG" \
+    || die "KAI config rejected the replica settings"
+  wait_for "Run:ai cluster services in two copies on different nodes" 900 10 runai_cluster_replicated \
+    || die "Run:ai cluster services not replicated (kubectl -n runai get deploy,sts)"
+}
+runai_cluster_replicated() {   # every workload ready; all but the known single ones with 2+ copies, on 2+ nodes
+  kc -n runai get deploy,sts -o json | SINGLE=$RUNAI_SINGLE python3 -c 'import json, os, sys
+single = os.environ["SINGLE"].split()
+items = json.load(sys.stdin)["items"]
+ok = all(o["status"].get("readyReplicas", 0) == o["spec"]["replicas"] for o in items)
+ok = ok and all(o["spec"]["replicas"] >= 2 for o in items if o["metadata"]["name"] not in single)
+sys.exit(0 if ok and len(items) > len(single) else 1)' && [ "$(kc -n runai get pods -l app=runai-scheduler-default -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | wc -l)" -ge 2 ]; }
+
 register_stage runai-fractions RUNAI_VERSION
 stage_runai_fractions() {   # the fractioning daemons (fractiond, mpsd) only where the driver supports them
   local v; v=$(nvidia_driver_oldest)   # on the NVIDIA nodes, wherever they are (multi-node: not this host)
@@ -264,9 +351,7 @@ runai_patch_build() {   # component build-image (env BUILD_SCRIPT SRC_DIR BINARY
   ok "patched image $img loaded into containerd"
   runai_patch_spread "$comp" "$img"
 }
-this_node() {   # this host's Kubernetes node name (the node with HOST_IP)
-  kc get nodes -o jsonpath="{range .items[*]}{.metadata.name} {.status.addresses[?(@.type=='InternalIP')].address}{'\n'}{end}" \
-    | awk -v a="$HOST_IP" '$2 == a {print $1}'; }
+this_node() { node_name_of "$HOST_IP"; }   # this host's Kubernetes node name
 runai_patch_spread() {   # component image: load the patched image on every other node too (Run:ai pods run on any node)
   multi_node || return 0
   local tar=$STATE/build/runai/$1.tar name addr role n=0 has="sudo ctr -n k8s.io images ls -q | grep -xF '$2' >/dev/null"

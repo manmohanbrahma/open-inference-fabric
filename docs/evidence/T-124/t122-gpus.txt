@@ -1,0 +1,27 @@
+T-122 GPUs on their nodes (1 NVIDIA, 1 AMD)
+        gpu-amd 192.168.120.21 amd 0000:03:00.0 7448 amdgpu
+        gpu-nvidia 192.168.120.22 nvidia 0000:03:00.0 2230 nvidia
+  PASS  at least one NVIDIA and one AMD GPU in the cluster
+  PASS  gpu-amd: 0000:03:00.0 on the amdgpu driver
+  PASS  gpu-amd: /dev/kfd present
+  PASS  gpu-amd: node gpu-amd offers amd.com/gpu
+  PASS  gpu-nvidia: 0000:03:00.0 on the nvidia driver
+  PASS  gpu-nvidia: nvidia-smi sees the GPU
+  PASS  gpu-nvidia: node gpu-nvidia offers nvidia.com/gpu
+  PASS  the cluster offers exactly 1 nvidia.com/gpu
+  PASS  the cluster offers exactly 1 amd.com/gpu
+  PASS  cp1 (no GPU) offers no GPU resource
+  PASS  cp2 (no GPU) offers no GPU resource
+  PASS  cp3 (no GPU) offers no GPU resource
+  PASS  NVIDIA GPU Operator ready (ClusterPolicy)
+  PASS  AMD device plugin running on every AMD node
+        NVIDIA pod on gpu-nvidia: GPU 0: NVIDIA RTX A6000 (UUID: GPU-9e34fa4f-9ed0-aa5d-c5cc-c8f4b4c23df2)
+        AMD pod on gpu-amd: /dev/kfd card0 renderD128 ls: /dev/nvidia0: No such file or directory 
+  PASS  NVIDIA pod ran on the NVIDIA node
+  PASS  NVIDIA pod sees its GPU and no /dev/kfd
+  PASS  AMD pod ran on the AMD node
+  PASS  AMD pod has /dev/kfd and a render device, no /dev/nvidia0
+  PASS  DCGM exporter reports the NVIDIA GPU
+  PASS  AMD metrics exporter reports the AMD GPU
+
+T-122: PASS (20 checks)

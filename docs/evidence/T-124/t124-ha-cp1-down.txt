@@ -1,0 +1,39 @@
+T-124 the platform without cp1
+  PASS  cp1 Ready before the test
+  PASS  platform ready before the test
+        34 platform pod(s) on cp1; API address held by cp2
+        power cp1 off now (hybrid-gpu-lab host: virsh destroy hl-cp1); waiting up to 15 min ...
+        cp1 is down (NotReady)
+  PASS  API answers on the shared address
+  PASS  API address held by another node
+  PASS  etcd keeps a majority (writes work)
+        without operator action: still waiting after 728 s: runai/deployment/application-controller monitoring/statefulset/alertmanager-kps-kube-prometheus-stack-alertmanager runai-backend/statefulset/keycloak
+        out-of-service taint on cp1 (the operator confirms it is off)
+        with the taint: platform ready after 926 s
+  PASS  platform ready again without cp1
+  PASS  no platform pod running on cp1
+  PASS  platform volumes usable (Longhorn, a copy lost)
+        runai-backend/data-runai-backend-nats-2 attached degraded
+        runai-backend/data-runai-backend-nats-1 attached degraded
+        runai-backend/data-runai-backend-postgresql-0 attached degraded
+        monitoring/prometheus-kps-kube-prometheus-stack-prometheus-db-prometheus-kps-kube-prometheus-stack-prometheus-0 attached degraded
+        runai-backend/data-runai-backend-nats-0 attached degraded
+        monitoring/kps-grafana attached degraded
+        runai-backend/data-runai-backend-thanos-receive-0 attached degraded
+  PASS  Run:ai UI answers (https://runai.192-168-120-240.sslip.io)
+  PASS  Run:ai API: log in and keep project team-c (quota 1 GPU per vendor pool)
+  PASS  NVIDIA workload runs in pool nvidia (gpu-nvidia)
+  PASS  AMD workload runs in pool amd (gpu-amd)
+  PASS  a third workload (second NVIDIA) waits: quota 1 in pool nvidia
+        waiting reason: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-c-nvidia quota is 1
+        oif:gpu_allocatable nvidia gpu-nvidia
+        oif:gpu_allocatable amd gpu-amd
+  PASS  Prometheus reports both vendors' GPU nodes
+  PASS  Grafana dashboards OIF Fleet and OIF Scheduling answer
+        power cp1 on again (hybrid-gpu-lab host: virsh start hl-cp1); waiting up to 15 min ...
+  PASS  cp1 Ready again
+        out-of-service taint removed
+  PASS  every platform volume has all its copies again
+  PASS  platform ready with cp1 back
+
+T-124: PASS (18 checks)

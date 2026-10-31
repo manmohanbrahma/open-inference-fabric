@@ -116,6 +116,7 @@ done
 kubeadm() { echo "kubeadm $*" >> "$SANDBOX/kubeadm"; return 0; }
 systemctl() { :; }
 K8S_TEMPLATES=$ROOT/platform/kubernetes
+JOINED_MARK=$SANDBOX/not-joined   # the test host may itself be a cluster node
 ( printf '%s\n' "${J/JOIN_ROLE=control/JOIN_ROLE=worker}" | node_join >/dev/null 2>&1 ) || fail "valid join settings refused"
 grep -q "join --config" "$SANDBOX/kubeadm" 2>/dev/null || fail "valid join settings did not reach kubeadm join"
 recorded "TEARDOWN kubernetes" || fail "a joined node must record its Kubernetes teardown"
@@ -137,5 +138,19 @@ eq "$(gpu_count nvidia) $(gpu_count amd)" "1 1" "per vendor (the AMD display car
 
 # a node refuses settings it does not expect
 ( printf 'RUNAI_ADMIN_PASSWORD=x\n' | node_worker >/dev/null 2>&1 ) && fail "node accepted an unexpected setting"
+
+# platform placement (ADR-021): Longhorn replicas only on the control-plane nodes of a cluster with three or more
+OIF_NODES=$GOOD
+ok_ platform_ha; eq "$(platform_sc)" longhorn "platform StorageClass, 3 control-plane nodes:"
+eq "$(node_settings control | grep '^LONGHORN_NODE=')" "LONGHORN_NODE=yes" "a control-plane node of an HA platform:"
+eq "$(node_settings worker | grep '^LONGHORN_NODE=')" "LONGHORN_NODE=no" "a GPU worker:"
+ok_ longhorn_here
+OIF_NODES="cp1=192.168.120.11:control gpu=192.168.120.21:worker"
+no_ platform_ha; eq "$(platform_sc)" local-path "platform StorageClass, 1 control-plane node:"
+eq "$(node_settings control | grep '^LONGHORN_NODE=')" "LONGHORN_NODE=no" "a single control-plane node:"
+OIF_NODES=""
+no_ platform_ha; no_ longhorn_here; eq "$(platform_sc)" local-path "platform StorageClass, single node:"
+( OIF_NODE=1 LONGHORN_NODE=yes; longhorn_here ) || fail "a node with LONGHORN_NODE=yes holds replicas"
+( OIF_NODE=1 LONGHORN_NODE=no; OIF_NODES=$GOOD; longhorn_here ) && fail "on a node, its own setting decides"
 
 finish

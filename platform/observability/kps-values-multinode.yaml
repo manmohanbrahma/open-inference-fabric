@@ -1,0 +1,28 @@
+# Multi-node (ADR-017, ADR-021), on top of kps-values.yaml: monitoring runs on the platform nodes and keeps its data on
+# the platform's StorageClass (Longhorn with three control-plane nodes). node-exporter stays on every node.
+prometheusOperator:
+  nodeSelector: &platform
+    ${SYSTEM_LABEL}: "true"
+  admissionWebhooks:
+    deployment:
+      nodeSelector: *platform
+    patch:
+      nodeSelector: *platform
+prometheus:
+  prometheusSpec:
+    nodeSelector: *platform
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ${PLATFORM_SC}
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector: *platform
+grafana:
+  nodeSelector: *platform
+  deploymentStrategy:
+    type: Recreate                      # one pod at a time: its volume attaches to one node
+  persistence:
+    storageClassName: ${PLATFORM_SC}
+kube-state-metrics:
+  nodeSelector: *platform

@@ -13,10 +13,14 @@ controlPlane:
   enabled: true
   version: "${RUNAI_VERSION}"
   domain: ${RUNAI_DOMAIN}
+  # multi-node: Run:ai's database, metrics store, message bus and login on the platform nodes ({} on a single node)
+  customHelmValues: ${RUNAI_CP_VALUES}
 cluster:
   enabled: true
   version: "${RUNAI_VERSION}"
   name: ${RUNAI_CLUSTER_NAME}
+  # multi-node: the cluster chart's subcharts that take no global affinity, on the platform nodes ({} on a single node)
+  customHelmValues: ${RUNAI_CLUSTER_VALUES}
   workloadRouting: host
 prerequisites:
   gpuOperator:
@@ -31,3 +35,5 @@ externalConnection:
   type: ingress
   ingress:
     className: haproxy
+# multi-node: the control plane and the cluster services only on the platform nodes, which oif labels (stage system-nodes)
+systemNodes: ${RUNAI_SYSTEM_NODES}

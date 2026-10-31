@@ -1,0 +1,36 @@
+T-124 the platform without cp2
+  PASS  cp2 Ready before the test
+  PASS  platform ready before the test
+        75 platform pod(s) on cp2; API address held by cp3; database primary oif-pg-2
+        power cp2 off now (hybrid-gpu-lab host: virsh destroy hl-cp2); waiting up to 15 min ...
+        cp2 is down (NotReady)
+  PASS  API answers on the shared address
+  PASS  API address held by another node
+  PASS  etcd keeps a majority (writes work)
+        not serving after 189 s: longhorn-system/longhorn-driver-deployer
+  FAIL  every replicated platform service has a ready copy without cp2 (no operator action)
+  PASS  database primary on another node, at least 2 instances ready
+        database primary now oif-pg-2, 2 instance(s) ready
+  PASS  platform volumes usable (Longhorn, a copy lost)
+  PASS  Run:ai UI answers (https://runai.192-168-120-240.sslip.io)
+  PASS  Run:ai API: log in and keep project team-c (quota 1 GPU per vendor pool)
+  PASS  NVIDIA workload runs in pool nvidia (gpu-nvidia)
+  PASS  AMD workload runs in pool amd (gpu-amd)
+  PASS  a third workload (second NVIDIA) waits: quota 1 in pool nvidia
+        waiting reason: NonPreemptibleOverQuota: Non-preemptible workload is over quota. Workload requested 1 GPUs, but team-c-nvidia quota is 1
+        oif:gpu_allocatable 
+  FAIL  Prometheus reports both vendors' GPU nodes
+  PASS  Grafana dashboards OIF Fleet and OIF Scheduling answer
+        longest outage seen by users: Run:ai UI 51 s, Grafana 81 s, Kubernetes API 0 s (probe every 5 s; limit 90 s)
+  PASS  Run:ai UI never away longer than 90 s
+  PASS  Grafana never away longer than 90 s
+  PASS  Kubernetes API never away longer than 90 s
+        single-copy controllers running again 473 s after NotReady
+  PASS  single-copy controllers restarted on another node (no operator action)
+        power cp2 on again (hybrid-gpu-lab host: virsh start hl-cp2); waiting up to 15 min ...
+  PASS  cp2 Ready again
+  PASS  every platform volume has all its copies again
+  PASS  platform ready with cp2 back (every copy)
+  PASS  database back to all its instances
+
+T-124: FAIL (2 of 23 checks failed)
