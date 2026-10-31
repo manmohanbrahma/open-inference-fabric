@@ -17,6 +17,10 @@ spec:
       # Run:ai's services run two copies each and keep pools; the default 100 ran out and left Grafana without a
       # connection after a failover
       max_connections: "400"
+      # a copy whose node was down catches up from the primary's log; the default 512MB lasted about 2.5 h in the lab
+      # (about 200 MB of log an hour) and a copy back after 4.5 h could not rejoin. 4GB is about 20 h; a longer outage
+      # needs the copy rebuilt (guide 10, day-2)
+      wal_keep_size: "4GB"
   enableSuperuserAccess: true          # Run:ai's post-install job logs in as postgres to set its user's role
   superuserSecret:
     name: oif-pg-superuser

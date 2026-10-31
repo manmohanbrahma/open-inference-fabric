@@ -8,6 +8,9 @@
 # While the node is off it checks the API, etcd, the database failover, Run:ai, new workloads and quotas in both vendor
 # pools and the dashboards. Then it waits for the node to come back (virsh start hl-cp1) and checks that every copy and
 # volume is complete again. Creates and deletes test pods in project team-c's namespace; otherwise only reads.
+# Its probes run inside the cluster, where kube-proxy answers the ingress address itself: start tests/lab/t124-probe.py
+# on a machine outside the cluster (hybrid-gpu-lab: the lab host) before the power-off to measure what users see
+# (a real login, an API call, Grafana); ADR-022 requires both to pass.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd); OIF_HOME=$ROOT
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 2; }

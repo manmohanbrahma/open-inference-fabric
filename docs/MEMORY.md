@@ -47,7 +47,9 @@ P1.4 (T-130+) is defined and ready to start after P1.3 checkpoint (or in paralle
 - Multi-node design is ADR-017: one entry point on the first control-plane node; same stages and own change record on every node; cluster key only after initial install; uninstall walks every node.
 - Single-node remains the default when `OIF_NODES` is empty.
 - Vendor-agnostic job surface and AcceleratorDomain: ADR-019; testing environments ADR-020.
-- Lab acceptance scripts: `tests/lab/t120-nodes.sh`, `t121-cluster.sh`, `t122-gpus.sh`, `t123-runai.sh`. Host clean check: `tests/host/verify-clean.sh`.
+- Lab acceptance scripts: `tests/lab/t120-nodes.sh`, `t121-cluster.sh`, `t122-gpus.sh`, `t123-runai.sh`, `t124-ha.sh` with `t124-probe.py` run outside the cluster (inside, kube-proxy answers the ingress address itself).
+- Platform HA is ADR-022 with its amendments: copies on different control-plane nodes, CloudNativePG database (always `clusters.postgresql.cnpg.io`: Run:ai has its own `cluster` CRD), `oif-conntrack-reaper` host service, MetalLB only on control-plane nodes, 20 s node detection, `wal_keep_size` 4GB.
+- Long lab tests: run them detached (`systemd-run` on the node, `setsid nohup` on the host); a dropped laptop link lost run 5 and run 6 of T-124. Host clean check: `tests/host/verify-clean.sh`.
 - The reference host has no `curl` or `git` out of the box; oif uses Python and `wget`.
 - Every step ships with a guide in `docs/guides/` (owner's rule, 2026-10-24).
 
